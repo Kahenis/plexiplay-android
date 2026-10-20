@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import tv.plexiplay.player.Engine
 import tv.plexiplay.player.PlaybackSettings
 import tv.plexiplay.player.PlayerKind
 import tv.plexiplay.plex.model.ServerEndpoint
@@ -176,13 +175,6 @@ fun SettingsScreen(
             item {
                 Hinted("Musique de générique des fiches de saisons et d'épisodes (0 à 50 %).") {
                     Chip("Volume du générique : " + (if (themeVolume == 0) "muet" else "$themeVolume %")) { volumeOpen = true }
-                }
-            }
-            item {
-                Hinted("Qui prépare la vidéo : le serveur (SERVER) ou l'appareil lui-même (TV).") {
-                    Cycle("Puissance", settings.engine.name, listOf(Engine.SERVER.name, Engine.TV.name)) {
-                        onChange(settings.copy(engine = Engine.valueOf(it)))
-                    }
                 }
             }
             item {

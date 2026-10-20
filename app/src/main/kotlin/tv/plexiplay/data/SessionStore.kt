@@ -64,8 +64,8 @@ class SessionStore(context: Context) {
         audioLanguage = prefs.getString(KEY_AUDIO, "fr") ?: "fr",
         subtitleLanguage = prefs.getString(KEY_SUB, "off") ?: "off",
         aspect = AspectMode.AUTO,
-        engine = runCatching { Engine.valueOf(prefs.getString(KEY_ENGINE, "TV") ?: "TV") }
-            .getOrDefault(Engine.TV),
+        // Mobile : réglage « Puissance » retiré, l'appareil prépare toujours la vidéo lui-même.
+        engine = Engine.TV,
         player = runCatching { PlayerKind.valueOf(prefs.getString(KEY_PLAYER, "EXO") ?: "EXO") }
             .getOrDefault(PlayerKind.EXO),
         trailerCount = 0,

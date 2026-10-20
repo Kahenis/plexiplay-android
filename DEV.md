@@ -19,6 +19,11 @@
 - `MainActivity.onStop` ne ferme plus l'appli (comportement TV retiré).
 - Mise à jour par la TV : `guilard.com/dl/android/` puis les releases de ce dépôt.
 
+## 1.5.1 : réglage « Puissance » retiré
+
+- Testé sur tablette : fonctionne bien dans l'ensemble.
+- Paramètres : la ligne « Puissance » (SERVER / TV) est supprimée. `SessionStore.settings()` fixe `engine = Engine.TV` (l'appareil lit lui-même ce qu'il sait décoder, le serveur ne convertit que le reste), y compris pour un ancien choix SERVER. Le nom interne `TV` est conservé (partagé avec `core/player`).
+
 ---
 
 # Notes de développement (Plexiplay clone)
