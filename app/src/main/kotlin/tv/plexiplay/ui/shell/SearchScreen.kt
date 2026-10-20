@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.shell
 
+import tv.plexiplay.ui.theme.tap
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -38,6 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import tv.plexiplay.ui.theme.isTablet
 import kotlinx.coroutines.delay
 import tv.plexiplay.plex.model.Metadata
 import tv.plexiplay.ui.theme.Accent
@@ -45,7 +55,6 @@ import tv.plexiplay.ui.theme.Ink
 import tv.plexiplay.ui.theme.Paper
 
 private const val MIN_LETTERS = 3
-private val keyRows = listOf("ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ0", "123456789")
 
 private fun fold(text: String): String =
     java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
@@ -82,10 +91,12 @@ fun SearchScreen(
     onOpen: (Metadata) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val firstKey = remember { FocusRequester() }
+    val field = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
-        delay(150)
-        runCatching { firstKey.requestFocus() }
+        delay(200)
+        runCatching { field.requestFocus() }
+        keyboard?.show()
     }
     val results = if (catalog == null) emptyList() else searchTitles(catalog, query)
     val letters = fold(query).trim().length
@@ -96,88 +107,59 @@ fun SearchScreen(
         results.size == 1 -> "1 résultat"
         else -> "${results.size} résultats"
     }
+    val tablet = isTablet()
 
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(Modifier.width(330.dp)) {
-            Text("Recherche", color = Paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Box(
-                Modifier
-                    .padding(top = 8.dp, bottom = 10.dp)
-                    .fillMaxWidth()
-                    .background(Color(0xFF2A333C), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            ) {
+    Column(Modifier.fillMaxSize()) {
+        Text("Recherche", color = Paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier
+                .padding(top = 8.dp, bottom = 6.dp)
+                .then(if (tablet) Modifier.width(420.dp) else Modifier.fillMaxWidth())
+                .background(Color(0xFF2A333C), RoundedCornerShape(6.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) {
                 if (query.isEmpty()) {
                     Text("Titre ou partie du titre", color = Color(0xFF6F7A86), fontSize = 16.sp)
-                } else {
-                    Text(query, color = Paper, fontSize = 18.sp, maxLines = 1)
                 }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Paper, fontSize = 18.sp),
+                    cursorBrush = SolidColor(Accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(field),
+                )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                keyRows.forEachIndexed { rowIndex, row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        row.forEachIndexed { column, ch ->
-                            KeyButton(
-                                label = ch.toString(),
-                                width = 34.dp,
-                                requester = if (rowIndex == 0 && column == 0) firstKey else null,
-                            ) { query += ch.lowercaseChar() }
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    KeyButton("Espace", 108.dp) { if (query.isNotEmpty() && !query.endsWith(" ")) query += " " }
-                    KeyButton("Effacer", 96.dp) { query = query.dropLast(1) }
-                    KeyButton("Tout", 68.dp) { query = "" }
-                }
+            if (query.isNotEmpty()) {
+                Text(
+                    "Effacer",
+                    color = Accent,
+                    fontSize = 14.sp,
+                    modifier = Modifier.tap { query = "" }.padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+                )
             }
         }
-        Column(Modifier.weight(1f)) {
-            Text(message, color = Color(0xFF9AA3AD), fontSize = 13.sp)
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(120.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize().padding(top = 8.dp),
-            ) {
-                items(results, key = { it.ratingKey }) { item ->
-                    Poster(
-                        item = item,
-                        thumb = thumb,
-                        posters = posters,
-                        requester = null,
-                        active = true,
-                        onOpen = { onOpen(item) },
-                    )
-                }
+        Text(message, color = Color(0xFF9AA3AD), fontSize = 13.sp)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(120.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize().padding(top = 8.dp),
+        ) {
+            items(results, key = { it.ratingKey }) { item ->
+                Poster(
+                    item = item,
+                    thumb = thumb,
+                    posters = posters,
+                    requester = null,
+                    active = true,
+                    onOpen = { onOpen(item) },
+                )
             }
         }
     }
-}
-
-@Composable
-private fun KeyButton(label: String, width: androidx.compose.ui.unit.Dp, requester: FocusRequester? = null, onPress: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    Text(
-        label,
-        color = if (focused) Ink else Paper,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        modifier = Modifier
-            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
-            .onPreviewKeyEvent {
-                if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
-                    onPress()
-                    true
-                } else false
-            }
-            .focusable()
-            .size(width, 34.dp)
-            .border(2.dp, if (focused) Color(0xFFE8C07A) else Color.Transparent, RoundedCornerShape(6.dp))
-            .background(if (focused) Accent else Color(0xFF2A333C), RoundedCornerShape(6.dp))
-            .padding(top = 6.dp),
-    )
 }

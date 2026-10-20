@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.auth
 
+import tv.plexiplay.ui.theme.tap
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -215,6 +217,7 @@ private fun Chip(label: String, primary: Boolean = false, onClick: () -> Unit) {
         color = if (primary || focused) Ink else Paper,
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
+            .tap { onClick() }
             .onKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()

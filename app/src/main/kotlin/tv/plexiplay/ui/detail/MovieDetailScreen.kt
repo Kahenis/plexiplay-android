@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.detail
 
+import tv.plexiplay.ui.theme.tap
+
 import tv.plexiplay.ui.theme.screenBackground
 import tv.plexiplay.ui.theme.themedButton
 import android.view.LayoutInflater
@@ -479,6 +481,7 @@ private fun ChoiceRow(label: String, requester: FocusRequester?, onClick: () -> 
                 focused = it.isFocused
                 if (it.isFocused) scope.launch { bring.bringIntoView() }
             }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()
@@ -512,6 +515,7 @@ internal fun Action(label: String, requester: FocusRequester? = null, primary: B
         modifier = Modifier
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()
@@ -533,6 +537,7 @@ private fun RestartAction(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()
@@ -610,6 +615,7 @@ private fun Cycle(title: String, value: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()

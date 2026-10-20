@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.settings
 
+import tv.plexiplay.ui.theme.tap
+
 import tv.plexiplay.ui.theme.screenBackground
 import tv.plexiplay.ui.theme.themedButton
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -291,6 +293,7 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
                 focused = it.isFocused
                 if (it.isFocused) scope.launch { bring.bringIntoView() }
             }
+            .tap { onClick() }
             .onKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()

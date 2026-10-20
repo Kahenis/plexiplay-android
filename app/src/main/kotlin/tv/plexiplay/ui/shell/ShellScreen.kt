@@ -1,5 +1,9 @@
 package tv.plexiplay.ui.shell
 
+import tv.plexiplay.ui.theme.tap
+import tv.plexiplay.ui.theme.tapOrHold
+import tv.plexiplay.ui.theme.isTablet
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
@@ -160,13 +164,29 @@ fun ShellScreen(
     val gridStates = remember { mutableMapOf<String, LazyGridState>() }
     val columnState = columnStates.getOrPut(pageKey) { LazyListState() }
     val gridState = gridStates.getOrPut(pageKey) { LazyGridState() }
-    val expanded = zone == Zone.Rail && !covered
+    val tablet = isTablet()
+    // Tablette : le menu de gauche reste déployé. Téléphone : icônes seules, un toucher sur le logo le déploie.
+    val expanded = (tablet || zone == Zone.Rail) && !covered
     val isSettings = selectedId == "settings"
     val railActive = zone == Zone.Rail && !covered
     val contentActive = zone == Zone.Content && !covered
     fun openItem(item: Metadata) {
         if (item.type == "season" || item.type == "collection") crumbs.add(item.ratingKey)
         onOpen(item)
+    }
+
+    fun forgetNow(open: ForgetMenu) {
+        val shelf = shelves.firstOrNull { row ->
+            forgetKind(row.title) == open.kind && row.items.any { it.ratingKey == open.item.ratingKey }
+        }
+        val index = shelf?.items?.indexOfFirst { it.ratingKey == open.item.ratingKey } ?: -1
+        val neighbor = if (shelf != null && index >= 0) {
+            shelf.items.getOrNull(index + 1) ?: shelf.items.getOrNull(index - 1)
+        } else null
+        pendingShelf = shelf?.title
+        pendingKey = open.item.ratingKey
+        pendingNeighbor = neighbor?.ratingKey
+        onForget(open.item, open.kind)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -203,19 +223,7 @@ fun ShellScreen(
                             } else {
                                 val confirm = menuChoice == 0
                                 menu = null
-                                if (confirm) {
-                                    val shelf = shelves.firstOrNull { row ->
-                                        forgetKind(row.title) == open.kind && row.items.any { it.ratingKey == open.item.ratingKey }
-                                    }
-                                    val index = shelf?.items?.indexOfFirst { it.ratingKey == open.item.ratingKey } ?: -1
-                                    val neighbor = if (shelf != null && index >= 0) {
-                                        shelf.items.getOrNull(index + 1) ?: shelf.items.getOrNull(index - 1)
-                                    } else null
-                                    pendingShelf = shelf?.title
-                                    pendingKey = open.item.ratingKey
-                                    pendingNeighbor = neighbor?.ratingKey
-                                    onForget(open.item, open.kind)
-                                }
+                                if (confirm) forgetNow(open)
                             }
                         }
                         event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape) -> menu = null
@@ -266,7 +274,8 @@ fun ShellScreen(
                             contentDescription = "Plexiplay",
                             modifier = Modifier
                                 .size(if (expanded) 28.dp else 36.dp)
-                                .clip(RoundedCornerShape(6.dp)),
+                                .clip(RoundedCornerShape(6.dp))
+                                .tap { zone = if (zone == Zone.Rail) Zone.Content else Zone.Rail },
                         )
                         if (expanded) {
                             Text(
@@ -423,7 +432,14 @@ fun ShellScreen(
                 .padding(horizontal = 8.dp, vertical = 2.dp),
         )
     }
-    menu?.let { ForgetPopup(it, menuChoice) }
+    menu?.let { open ->
+        // Toucher en dehors du menu : il se ferme.
+        Box(Modifier.fillMaxSize().tap { menu = null })
+        ForgetPopup(open, menuChoice, onPick = { choice ->
+            menu = null
+            if (choice == 0) forgetNow(open)
+        })
+    }
     }
     // Indicateur « Chargement » : visible jusqu'à ce que la page de la bibliothèque soit prête.
     LaunchedEffect(loadingLibrary, pageKey, shelves, items, useShelves) {
@@ -557,7 +573,8 @@ private fun PaneChip(label: String, selected: Boolean, active: Boolean, onClick:
             }
             .focusable()
             .themedButton(if (selected || focused) Accent else Color(0xFF2A333C), focused)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .tap { onClick() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
     )
 }
 
@@ -580,6 +597,7 @@ private fun RailRow(
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()
@@ -684,6 +702,10 @@ internal fun Poster(
             .onGloballyPositioned { bounds = it.boundsInRoot() }
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
+            .then(
+                if (onLongPress == null) Modifier.tap { onOpen() }
+                else Modifier.tapOrHold({ onOpen() }, { onLongPress(bounds) }),
+            )
             .onPreviewKeyEvent {
                 val center = it.key == Key.DirectionCenter || it.key == Key.Enter
                 if (!center) return@onPreviewKeyEvent false
@@ -789,7 +811,7 @@ internal fun Poster(
 }
 
 @Composable
-private fun ForgetPopup(menu: ForgetMenu, choice: Int) {
+private fun ForgetPopup(menu: ForgetMenu, choice: Int, onPick: (Int) -> Unit = {}) {
     val density = LocalDensity.current
     val config = LocalConfiguration.current
     val screenWidth = with(density) { config.screenWidthDp.dp.toPx() }
@@ -821,13 +843,13 @@ private fun ForgetPopup(menu: ForgetMenu, choice: Int) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
-        PopupChoice(remove, choice == 0)
-        PopupChoice("Annuler", choice == 1)
+        PopupChoice(remove, choice == 0) { onPick(0) }
+        PopupChoice("Annuler", choice == 1) { onPick(1) }
     }
 }
 
 @Composable
-private fun PopupChoice(label: String, selected: Boolean) {
+private fun PopupChoice(label: String, selected: Boolean, onPick: () -> Unit = {}) {
     Text(
         label,
         color = if (selected) Ink else Paper,
@@ -836,7 +858,8 @@ private fun PopupChoice(label: String, selected: Boolean) {
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .background(if (selected) Accent else Color.Transparent, RoundedCornerShape(6.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .tap { onPick() }
+            .padding(horizontal = 10.dp, vertical = 12.dp),
     )
 }
 
@@ -872,6 +895,7 @@ private fun GearButton(selected: Boolean, active: Boolean, onClick: () -> Unit) 
             .size(30.dp)
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
+            .tap { onClick() }
             .onPreviewKeyEvent {
                 val ok = it.key == Key.DirectionCenter || it.key == Key.Enter
                 if (!ok) {
