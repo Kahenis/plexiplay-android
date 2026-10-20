@@ -1,0 +1,6 @@
+348379:e: file:///home/runner/work/plexiplay-android/plexiplay-android/app/src/main/kotlin/tv/plexiplay/MainActivity.kt:95:94 Unresolved reference 'navigationBars'.
+348381:> Task :app:compileReleaseKotlin FAILED
+348386:* What went wrong:
+348429:Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+348558:Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
+348590:BUILD FAILED in 3m 17s
