@@ -50,6 +50,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import tv.plexiplay.ui.theme.tap
+import tv.plexiplay.ui.theme.tapOrHold
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.sin
@@ -115,7 +117,7 @@ data class ClipPlay(
 
 internal enum class Glyph { Play, Pause, Rew10, Fwd10, Rew30, Fwd30, Subs, Fr, Info, Skip, Hide, Stop }
 
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PlayerScreen(
     clips: List<ClipPlay>,
@@ -878,10 +880,25 @@ fun PlayerScreen(
         pulse += 1
     }
 
+    ImmersiveLandscape()
+    PauseWhenBackgrounded { if (player.isPlaying) player.pause() }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .playerGestures(
+                onToggle = {
+                    if (audioMenu || subMenu) {
+                        audioMenu = false
+                        subMenu = false
+                    } else if (shown.value) shown.value = false else reveal()
+                },
+                onSeek = { direction ->
+                    player.seekTo((player.currentPosition + direction * 10_000L).coerceAtLeast(0))
+                    notice = if (direction < 0) "− 10 s" else "+ 10 s"
+                },
+                onFeedback = { notice = it },
+            )
             .onPreviewKeyEvent { event ->
                 val ok = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                 if (event.type == KeyEventType.KeyUp) {
@@ -1060,6 +1077,9 @@ fun PlayerScreen(
                     .padding(horizontal = 28.dp, vertical = 16.dp),
             )
         }
+        if (audioMenu || subMenu) {
+            Box(Modifier.fillMaxSize().tap { audioMenu = false; subMenu = false })
+        }
         if (audioMenu) {
             val menuClip = clips.getOrNull(player.currentMediaItemIndex)
             val menuCurrent = pickedAudio[player.currentMediaItemIndex] ?: menuClip?.audios?.firstOrNull { it.current }?.id
@@ -1068,6 +1088,7 @@ fun PlayerScreen(
                 selected = menuIndex,
                 current = menuClip?.audios?.indexOfFirst { it.id == menuCurrent } ?: -1,
                 modifier = Modifier.align(Alignment.Center),
+                onPick = { chooseAudio(it) },
             )
         }
         if (subMenu) {
@@ -1078,6 +1099,10 @@ fun PlayerScreen(
                 current = menuClip?.let { subPosition(player.currentMediaItemIndex, it) } ?: -1,
                 modifier = Modifier.align(Alignment.Center),
                 title = "Sous-titres",
+                onPick = {
+                    subMenu = false
+                    chooseSub(it)
+                },
             )
         }
         if (infoVisible && aspectNote.isNotEmpty()) {
@@ -1104,47 +1129,28 @@ fun PlayerScreen(
         }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+            val barPad = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 700) 16.dp else 48.dp
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
-                    .padding(start = 48.dp, end = 48.dp, top = 36.dp, bottom = 22.dp),
+                    .padding(start = barPad, end = barPad, top = 36.dp, bottom = 22.dp),
             ) {
-                Box(Modifier.fillMaxWidth().height(16.dp)) {
-                    Box(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.35f)),
-                    )
-                    Box(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .fillMaxWidth(fraction)
-                            .height(3.dp)
-                            .clip(CircleShape)
-                            .background(Color.White),
-                    )
-                    Box(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .fillMaxWidth(fraction.coerceAtLeast(0.02f)),
-                        contentAlignment = Alignment.CenterEnd,
-                    ) {
-                        Box(Modifier.size(12.dp).clip(CircleShape).background(Color.White))
-                    }
-                }
+                SeekBar(
+                    fraction = fraction,
+                    onSeek = { f -> if (duration > 0L) player.seekTo((f * duration).toLong()) },
+                    onTouch = { reveal() },
+                )
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(clock(position), color = Color.White, fontSize = 12.sp)
                     Text(clock(duration), color = Color.White, fontSize = 12.sp)
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerIcon(Glyph.Rew30) { player.seekTo((player.currentPosition - 30_000).coerceAtLeast(0)); reveal() }
                     PlayerIcon(Glyph.Rew10) { player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0)); reveal() }
@@ -1199,6 +1205,10 @@ internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongP
             .size(if (glyph == Glyph.Play || glyph == Glyph.Pause) 54.dp else 44.dp)
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
+            .then(
+                if (onLongPress != null) Modifier.tapOrHold({ onClick() }, { onLongPress() })
+                else Modifier.tap { onClick() },
+            )
             .onPreviewKeyEvent {
                 val ok = it.key == Key.DirectionCenter || it.key == Key.Enter
                 if (onLongPress != null && ok) {

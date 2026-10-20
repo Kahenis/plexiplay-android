@@ -94,12 +94,10 @@ class MainActivity : AppCompatActivity() {
         tv.plexiplay.update.KeepOpen.on = false
     }
 
-    /** Touche Home (ou toute sortie de l'appli) : fermeture complète, sans message. */
+    /** Application mise en arrière-plan (appel, autre appli, Home) : la lecture se met en pause, l'appli reste ouverte. */
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations && !isFinishing && !tv.plexiplay.update.KeepOpen.on) {
-            finishAndRemoveTask()
-        }
+        tv.plexiplay.ui.player.BackgroundPause.action?.invoke()
     }
 
     private fun applyLanguage(code: String) {

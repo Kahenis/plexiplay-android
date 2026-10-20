@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
@@ -83,7 +84,7 @@ import tv.plexiplay.ui.theme.Paper
  * Fiche d'une série : jaquette officielle, résumé, puis les saisons.
  * Une saison ouverte affiche ses épisodes, avec le même fond (promo + générique de la série).
  */
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SeriesScreen(
     seed: Metadata,
@@ -226,6 +227,7 @@ fun SeriesScreen(
             ?: 0
     }
 
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -250,11 +252,12 @@ fun SeriesScreen(
                 .joinToString("   ")
             Column(
                 Modifier
-                    .fillMaxWidth(0.62f)
+                    .fillMaxWidth(if (compact) 1f else 0.62f)
                     .fillMaxHeight()
-                    .padding(start = 36.dp, top = 28.dp, end = 16.dp, bottom = 20.dp),
+                    .then(if (compact) Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()) else Modifier)
+                    .padding(start = if (compact) 16.dp else 36.dp, top = if (compact) 16.dp else 28.dp, end = 16.dp, bottom = 20.dp),
             ) {
-                Text(show.title, color = Paper, fontSize = 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(show.title, color = Paper, fontSize = if (compact) 24.sp else 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (show.tagline.isNotBlank()) {
                     Text(show.tagline, color = Color(0xFFC5CDD6), fontSize = 16.sp, modifier = Modifier.padding(top = 4.dp), maxLines = 2)
                 }
@@ -280,7 +283,11 @@ fun SeriesScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 8.dp),
                 )
-                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     val episode = next
                     val verb = if (episode != null && episode.viewOffset >= 30_000L) "Reprendre" else "Lecture"
                     val label = if (episode != null && episode.parentIndex > 0 && episode.index > 0) {
@@ -307,7 +314,7 @@ fun SeriesScreen(
                 if (notice.isNotBlank() || note.isNotBlank()) {
                     Text(notice.ifBlank { note }, color = Color(0xFF9AA3AD), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                 }
-                Spacer(Modifier.weight(1f))
+                if (compact) Spacer(Modifier.height(16.dp)) else Spacer(Modifier.weight(1f))
                 Text("Saisons", color = Paper, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -331,14 +338,14 @@ fun SeriesScreen(
         } else {
             Column(
                 Modifier
-                    .fillMaxWidth(0.62f)
+                    .fillMaxWidth(if (compact) 1f else 0.62f)
                     .fillMaxHeight()
-                    .padding(start = 36.dp, top = 24.dp, end = 16.dp, bottom = 16.dp),
+                    .padding(start = if (compact) 16.dp else 36.dp, top = if (compact) 16.dp else 24.dp, end = 16.dp, bottom = 16.dp),
             ) {
                 Text(show.title, color = Color(0xFF9AA3AD), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(season.title, color = Paper, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(
-                    note.ifBlank { "Appui long sur OK : marquer vu / non vu" },
+                    note.ifBlank { "Appui long : marquer vu / non vu" },
                     color = Color(0xFF9AA3AD),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 4.dp),

@@ -38,6 +38,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import tv.plexiplay.ui.theme.tap
+import tv.plexiplay.ui.theme.tapOrHold
 import androidx.compose.ui.unit.sp
 import io.github.yuroyami.libmpvkt.HwdecMode
 import io.github.yuroyami.libmpvkt.LoadFileMode
@@ -108,6 +110,7 @@ private fun applyMpvChoice(
     else core.command(MpvCommands.set(MpvProperties.Sid, TrackSelection.No))
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun MpvPlayerScreen(
     clips: List<ClipPlay>,
@@ -386,10 +389,25 @@ internal fun MpvPlayerScreen(
         subMenu = true
     }
 
+    ImmersiveLandscape()
+    PauseWhenBackgrounded { screen?.paused = true }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .playerGestures(
+                onToggle = {
+                    if (audioMenu || subMenu) {
+                        audioMenu = false
+                        subMenu = false
+                    } else if (shown.value) shown.value = false else reveal()
+                },
+                onSeek = { direction ->
+                    screen?.seek(direction * 10.0, SeekMode.Relative, SeekPrecision.Keyframes)
+                    notice = if (direction < 0) "− 10 s" else "+ 10 s"
+                },
+                onFeedback = { notice = it },
+            )
             .onPreviewKeyEvent { event ->
                 val ok = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                 if (event.type == KeyEventType.KeyUp) {
@@ -538,6 +556,9 @@ internal fun MpvPlayerScreen(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 28.dp),
             )
         }
+        if (audioMenu || subMenu) {
+            Box(Modifier.fillMaxSize().tap { audioMenu = false; subMenu = false })
+        }
         if (audioMenu) {
             val menuClip = clips.getOrNull(index)
             val menuCurrent = pickedAudio[index] ?: menuClip?.audios?.firstOrNull { it.current }?.id
@@ -546,6 +567,7 @@ internal fun MpvPlayerScreen(
                 selected = menuIndex,
                 current = menuClip?.audios?.indexOfFirst { it.id == menuCurrent } ?: -1,
                 modifier = Modifier.align(Alignment.Center),
+                onPick = { chooseAudio(it) },
             )
         }
         if (subMenu) {
@@ -556,6 +578,10 @@ internal fun MpvPlayerScreen(
                 current = menuClip?.let { subPosition(index, it) } ?: -1,
                 modifier = Modifier.align(Alignment.Center),
                 title = "Sous-titres",
+                onPick = {
+                    subMenu = false
+                    chooseSub(it)
+                },
             )
         }
         if (infoVisible && mpvStats.isNotEmpty()) {
@@ -586,25 +612,28 @@ internal fun MpvPlayerScreen(
         }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+            val barPad = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 700) 16.dp else 48.dp
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
-                    .padding(start = 48.dp, end = 48.dp, top = 36.dp, bottom = 22.dp),
+                    .padding(start = barPad, end = barPad, top = 36.dp, bottom = 22.dp),
             ) {
-                Box(Modifier.fillMaxWidth().height(16.dp)) {
-                    Box(Modifier.align(Alignment.CenterStart).fillMaxWidth().height(3.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.35f)))
-                    Box(Modifier.align(Alignment.CenterStart).fillMaxWidth(fraction).height(3.dp).clip(CircleShape).background(Color.White))
-                }
+                SeekBar(
+                    fraction = fraction,
+                    onSeek = { f -> if (duration > 0L) screen?.seek(f * duration / 1000.0, SeekMode.Absolute, SeekPrecision.Keyframes) },
+                    onTouch = { reveal() },
+                )
                 Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(clock(position), color = Color.White, fontSize = 12.sp)
                     Text(clock(duration), color = Color.White, fontSize = 12.sp)
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerIcon(Glyph.Rew30) {
                         screen?.seek(-30.0, SeekMode.Relative, SeekPrecision.Keyframes)
