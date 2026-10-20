@@ -7,6 +7,18 @@
 - Mise à jour : `https://guilard.com/dl/android/version.txt` + `plexiplay.apk`, repli sur les releases de ce dépôt.
 - Pas d'obfuscation (R8 désactivé) tant que le dépôt est public. Modules verrouillés ouverts le temps du chantier tactile.
 
+### Tactile (1.5.0)
+
+- `ui/theme/Touch.kt` : `tap` et `tapOrHold` s'ajoutent à côté des touches de télécommande existantes (mêmes actions), `isTablet()` (≥ 600 dp).
+- Rail : toujours déployé sur tablette ; sur téléphone, icônes seules, un toucher sur le logo déploie le rail. Onglets, affiches (appui long = « Retirer de Continuer à regarder »), roue des paramètres, saisons et épisodes (appui long = vu / non vu), distribution, résumé et fiche acteur (bouton « Fermer »).
+- Recherche : champ de saisie avec le clavier du téléphone (le clavier à l'écran de la TV est retiré).
+- Connexion : bouton « Se connecter dans le navigateur » (page Plex), mise en page en colonne sur téléphone.
+- Fiches film et série : mise en page compacte (< 600 dp) : colonne qui défile, boutons qui passent à la ligne.
+- Dialogues (confirmation, mise à jour, invitations, bibliothèques, volume) : lignes et boutons tactiles ; un fond `tap { }` empêche les toucher de traverser.
+- Lecteur (ExoPlayer et mpv) : `ui/player/TouchControls.kt` — toucher = afficher/masquer les commandes, double toucher = ±10 s, glissement vertical = luminosité (gauche) / volume (droite), barre de progression tactile (toucher ou glisser, saut au relâchement), listes audio et sous-titres tactiles, écran en paysage et barres masquées pendant la lecture, pause quand l'appli passe en arrière-plan.
+- `MainActivity.onStop` ne ferme plus l'appli (comportement TV retiré).
+- Mise à jour par la TV : `guilard.com/dl/android/` puis les releases de ce dépôt.
+
 ---
 
 # Notes de développement (Plexiplay clone)
