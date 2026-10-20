@@ -37,6 +37,11 @@
 - Tablette en portrait (`portrait` : ≥ 600 dp de large, plus haute que large) : colonne de texte à 90 % de la largeur (au lieu de 56 %) et boutons qui passent à la ligne (`FlowRow`, comme sur téléphone).
 - S'applique aussi à la fiche d'un épisode (même écran).
 
+## 1.5.4 : fiche film, boutons en deux lignes
+
+- Constat (tablette en portrait) : la barre unique passait à la ligne n'importe où ; « 4K » restait à côté de « Marquer comme lu », Audio et Sous-titres en dessous.
+- Quand les boutons passent à la ligne (`wrapBar` : téléphone, tablette en portrait) : deux `FlowRow` dans une colonne, actions (Lecture, Bandes-annonces, Marquer comme lu) en haut, choix (Résolution, Audio, Sous-titres) en dessous, alignés à gauche. La liste de choix s'ouvre à gauche, au-dessus de la barre. Tablette en paysage inchangée (une ligne, choix à droite, liste à droite).
+
 ---
 
 # Notes de développement (Plexiplay clone)

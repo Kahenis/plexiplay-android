@@ -412,13 +412,19 @@ fun MovieDetailScreen(
         }
         val measureBar = Modifier.onSizeChanged { barHeightPx = it.height }
         if (wrapBar) {
-            androidx.compose.foundation.layout.FlowRow(
+            // Deux groupes sur deux lignes : actions en haut, choix (résolution, audio, sous-titres) en dessous, alignés à gauche.
+            Column(
                 modifier = Modifier.align(Alignment.BottomStart).then(measureBar).fillMaxWidth().padding(horizontal = if (compact) 16.dp else 36.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                leftBar()
-                rightBar()
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { leftBar() }
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { rightBar() }
             }
         } else {
             Row(
@@ -440,7 +446,11 @@ fun MovieDetailScreen(
             ChoiceList(
                 picks = picks,
                 firstFocus = menuFocus,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 16.dp else 36.dp, bottom = barHeight + 8.dp),
+                modifier = if (wrapBar) {
+                    Modifier.align(Alignment.BottomStart).padding(start = if (compact) 16.dp else 36.dp, bottom = barHeight + 8.dp)
+                } else {
+                    Modifier.align(Alignment.BottomEnd).padding(end = 36.dp, bottom = barHeight + 8.dp)
+                },
             ) { id ->
                 when (menu) {
                     "audio" -> audio = id
