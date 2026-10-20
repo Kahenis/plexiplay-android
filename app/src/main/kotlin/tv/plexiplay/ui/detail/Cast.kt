@@ -61,6 +61,8 @@ import tv.plexiplay.plex.PersonWork
 import tv.plexiplay.plex.model.RoleItem
 import tv.plexiplay.ui.shell.PosterStore
 import tv.plexiplay.ui.theme.Accent
+import tv.plexiplay.ui.theme.tap
+import androidx.compose.ui.platform.LocalConfiguration
 import tv.plexiplay.ui.theme.FocusRing
 import tv.plexiplay.ui.theme.Ink
 import tv.plexiplay.ui.theme.Panel
@@ -153,6 +155,7 @@ fun CastRow(
                             focused = it.isFocused
                             if (it.isFocused) last = index
                         }
+                        .tap { onOpen(entry) }
                         .onPreviewKeyEvent {
                             if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                                 onOpen(entry)
@@ -216,7 +219,9 @@ fun ActorDialog(
     info: PersonInfo?,
     posters: PosterStore,
     thumbs: (String) -> List<String>,
+    onClose: () -> Unit = {},
 ) {
+    val narrow = LocalConfiguration.current.screenWidthDp < 600
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -225,6 +230,7 @@ fun ActorDialog(
         Modifier
             .fillMaxSize()
             .background(Color(0xD9000000))
+            .tap { }
             .focusRequester(focus)
             .onPreviewKeyEvent { event ->
                 val dpad = event.key == Key.DirectionUp || event.key == Key.DirectionDown ||
@@ -245,14 +251,14 @@ fun ActorDialog(
         Row(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = 80.dp, vertical = 36.dp)
+                .padding(horizontal = if (narrow) 8.dp else 80.dp, vertical = if (narrow) 16.dp else 36.dp)
                 .background(Panel, RoundedCornerShape(14.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(14.dp))
-                .padding(24.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(if (narrow) 12.dp else 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (narrow) 12.dp else 24.dp),
         ) {
-            Column(Modifier.width(180.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Octagon(entry.role, 150, posters, thumbs, false)
+            Column(Modifier.width(if (narrow) 104.dp else 180.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Octagon(entry.role, if (narrow) 90 else 150, posters, thumbs, false)
                 Text(
                     entry.role.tag, color = Paper, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 12.dp),
@@ -289,8 +295,9 @@ fun ActorDialog(
                     }
                 }
                 Text(
-                    "Haut / bas : faire défiler    Retour : fermer",
-                    color = Color(0xFF6F7A88), fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp),
+                    "Fermer",
+                    color = Accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.tap { onClose() }.padding(top = 10.dp, bottom = 10.dp, end = 16.dp),
                 )
             }
         }
@@ -300,7 +307,8 @@ fun ActorDialog(
 
 /** Grand popup du résumé complet : défile avec haut/bas, Retour referme (géré par l'écran). */
 @Composable
-fun SummaryDialog(title: String, subtitle: String, summary: String) {
+fun SummaryDialog(title: String, subtitle: String, summary: String, onClose: () -> Unit = {}) {
+    val narrow = LocalConfiguration.current.screenWidthDp < 600
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -309,6 +317,7 @@ fun SummaryDialog(title: String, subtitle: String, summary: String) {
         Modifier
             .fillMaxSize()
             .background(Color(0xD9000000))
+            .tap { }
             .focusRequester(focus)
             .onPreviewKeyEvent { event ->
                 val dpad = event.key == Key.DirectionUp || event.key == Key.DirectionDown ||
@@ -329,10 +338,10 @@ fun SummaryDialog(title: String, subtitle: String, summary: String) {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = 110.dp, vertical = 44.dp)
+                .padding(horizontal = if (narrow) 8.dp else 110.dp, vertical = if (narrow) 16.dp else 44.dp)
                 .background(Panel, RoundedCornerShape(14.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(14.dp))
-                .padding(28.dp),
+                .padding(if (narrow) 14.dp else 28.dp),
         ) {
             Text(title, color = Paper, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
@@ -347,8 +356,9 @@ fun SummaryDialog(title: String, subtitle: String, summary: String) {
                 )
             }
             Text(
-                "Haut / bas : faire défiler    Retour : fermer",
-                color = Color(0xFF6F7A88), fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp),
+                "Fermer",
+                color = Accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.tap { onClose() }.padding(top = 10.dp, bottom = 10.dp, end = 16.dp),
             )
         }
     }

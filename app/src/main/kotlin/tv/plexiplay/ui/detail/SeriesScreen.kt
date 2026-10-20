@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.detail
 
+import tv.plexiplay.ui.theme.tapOrHold
+
 import tv.plexiplay.ui.theme.screenBackground
 import android.graphics.Bitmap
 import android.view.LayoutInflater
@@ -443,6 +445,11 @@ private fun SeasonCard(
             .width(100.dp)
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
+            .tapOrHold({ onClick() }, {
+                val state = unseen > 0
+                viewed = if (state) season.leafCount else 0
+                onToggle(state)
+            })
             .onPreviewKeyEvent {
                 val ok = it.key == Key.DirectionCenter || it.key == Key.Enter
                 if (ok && it.type == KeyEventType.KeyDown && it.nativeKeyEvent.isLongPress && !held) {
@@ -544,6 +551,10 @@ private fun EpisodeRow(
             .fillMaxWidth()
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
+            .tapOrHold({ onClick() }, {
+                seen = !seen
+                onToggle(seen)
+            })
             .onPreviewKeyEvent {
                 val ok = it.key == Key.DirectionCenter || it.key == Key.Enter
                 if (ok && it.type == KeyEventType.KeyDown && it.nativeKeyEvent.isLongPress && !held) {

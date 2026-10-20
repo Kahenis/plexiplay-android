@@ -40,6 +40,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -131,31 +133,38 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
         submit = false
     }
 
-    Row(
-        modifier = Modifier.fillMaxSize().background(Ink).padding(48.dp),
-        horizontalArrangement = Arrangement.spacedBy(48.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+    val narrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 700
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val form: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
             Text("Plexiplay", color = Accent, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-            Text("Connexion au compte", color = Paper, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            Text("Connexion au compte", color = Paper, fontSize = if (narrow) 28.sp else 40.sp, fontWeight = FontWeight.Bold)
             Text(
                 code.padEnd(4, '·').take(4),
                 color = Paper,
-                fontSize = 64.sp,
+                fontSize = if (narrow) 48.sp else 64.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 16.sp,
+                letterSpacing = if (narrow) 10.sp else 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp),
             )
-            Text(message, color = Color(0xFF9AA3AD), fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp))
+            Text(message, color = Color(0xFF9AA3AD), fontSize = if (narrow) 15.sp else 20.sp, modifier = Modifier.padding(top = 8.dp))
             Text(
                 "Google, Apple ou e-mail : choisissez-les sur la page plex.tv/link ou avec le QR code.",
                 color = Color(0xFF9AA3AD),
                 fontSize = 16.sp,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            Row(modifier = Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (qrUrl.isNotBlank()) {
+                Chip("Se connecter dans le navigateur", primary = true, modifier = Modifier.padding(top = 20.dp)) {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(qrUrl))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            }
+            Row(modifier = Modifier.padding(top = if (narrow) 14.dp else 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Chip("Nouveau code") { attempt += 1 }
                 Chip(if (classic) "Masquer l'e-mail" else "E-mail et mot de passe") { classic = !classic }
             }
@@ -170,6 +179,22 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
                 }
                 Row(Modifier.padding(top = 12.dp)) { Chip("Valider", primary = true) { submit = true } }
             }
+    }
+    if (narrow) {
+        Column(
+            modifier = Modifier.fillMaxSize().background(Ink).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(20.dp),
+        ) {
+            form()
+        }
+        return
+    }
+    Row(
+        modifier = Modifier.fillMaxSize().background(Ink).padding(48.dp),
+        horizontalArrangement = Arrangement.spacedBy(48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+            form()
         }
         if (qrUrl.isNotBlank()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(300.dp)) {
@@ -205,7 +230,7 @@ private fun QrCode(content: String, modifier: Modifier) {
 }
 
 @Composable
-private fun Chip(label: String, primary: Boolean = false, onClick: () -> Unit) {
+private fun Chip(label: String, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val fill = when {
         primary -> Signal
@@ -215,7 +240,7 @@ private fun Chip(label: String, primary: Boolean = false, onClick: () -> Unit) {
     Text(
         label,
         color = if (primary || focused) Ink else Paper,
-        modifier = Modifier
+        modifier = modifier
             .onFocusChanged { focused = it.isFocused }
             .tap { onClick() }
             .onKeyEvent {
@@ -239,6 +264,6 @@ private fun Field(value: String, secret: Boolean = false, onValue: (String) -> U
         singleLine = true,
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         textStyle = TextStyle(color = Paper, fontSize = 22.sp),
-        modifier = Modifier.width(420.dp).padding(top = 6.dp).background(Panel).padding(12.dp).focusable(),
+        modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = 6.dp).background(Panel).padding(12.dp).focusable(),
     )
 }

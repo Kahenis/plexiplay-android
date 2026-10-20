@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.settings
 
+import tv.plexiplay.ui.theme.tap
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -130,6 +133,7 @@ fun LibraryPicker(
             .fillMaxSize()
             .background(Color(0xCC000000))
             .focusRequester(focus)
+            .tap { }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
@@ -148,14 +152,14 @@ fun LibraryPicker(
     ) {
         Column(
             Modifier
-                .width(440.dp)
+                .widthIn(max = 440.dp).fillMaxWidth(0.94f)
                 .background(Panel, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(10.dp))
                 .padding(16.dp),
         ) {
             Text("Bibliothèques affichées", color = Paper, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(
-                "Haut / bas pour choisir, OK pour cocher ou décocher.",
+                "Touchez une bibliothèque pour la cocher ou la décocher.",
                 color = Color(0xFF9AA3AD),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -174,14 +178,16 @@ fun LibraryPicker(
                         PickerRow.Server -> PickerLine(
                             "Serveur : ${server?.name.orEmpty()}",
                             selected,
+                            onClick = { cursor = position; activate() },
                         )
                         is PickerRow.Library -> PickerLine(
                             row.section.title.ifBlank { "Bibliothèque" },
                             selected,
                             checked = row.section.key !in hidden,
+                            onClick = { cursor = position; activate() },
                         )
-                        PickerRow.Ok -> PickerButton("OK", selected, true)
-                        PickerRow.Cancel -> PickerButton("Annuler", selected, false)
+                        PickerRow.Ok -> PickerButton("OK", selected, true) { cursor = position; activate() }
+                        PickerRow.Cancel -> PickerButton("Annuler", selected, false) { cursor = position; activate() }
                     }
                 }
             }
@@ -193,12 +199,13 @@ fun LibraryPicker(
 }
 
 @Composable
-private fun PickerLine(label: String, selected: Boolean, checked: Boolean? = null) {
+private fun PickerLine(label: String, selected: Boolean, checked: Boolean? = null, onClick: () -> Unit = {}) {
     Row(
         Modifier
             .fillMaxWidth()
             .background(if (selected) Accent else Color(0xFF2A333C), RoundedCornerShape(6.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .tap { onClick() }
+            .padding(horizontal = 10.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -222,7 +229,7 @@ private fun PickerLine(label: String, selected: Boolean, checked: Boolean? = nul
 }
 
 @Composable
-private fun PickerButton(label: String, selected: Boolean, primary: Boolean) {
+private fun PickerButton(label: String, selected: Boolean, primary: Boolean, onClick: () -> Unit = {}) {
     Text(
         label,
         color = if (selected) Ink else Paper,
@@ -239,6 +246,7 @@ private fun PickerButton(label: String, selected: Boolean, primary: Boolean) {
                 },
                 RoundedCornerShape(6.dp),
             )
-            .padding(vertical = 8.dp),
+            .tap { onClick() }
+            .padding(vertical = 12.dp),
     )
 }

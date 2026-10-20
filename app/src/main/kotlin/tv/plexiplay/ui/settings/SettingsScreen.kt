@@ -119,7 +119,7 @@ fun SettingsScreen(
                 }
             }
             item {
-                Hinted("Choisissez les bibliothèques visibles dans le menu de gauche, serveur par serveur.") {
+                Hinted("Choisissez les bibliothèques visibles dans le menu, serveur par serveur.") {
                     Chip("Bibliothèques affichées", onClick = onLibraries)
                 }
             }
@@ -159,7 +159,7 @@ fun SettingsScreen(
             }
             if (settings.player != PlayerKind.MPV) {
                 item {
-                    Hinted("Corrige l'image étirée sur certaines TV. Désactivez-la si l'image est déjà correcte.") {
+                    Hinted("Corrige l'image étirée sur certains écrans. Désactivez-la si l'image est déjà correcte.") {
                         Cycle("Correction du format", if (settings.formatFix) "Activée" else "Désactivée", listOf("Activée", "Désactivée")) {
                             onChange(settings.copy(formatFix = it == "Activée"))
                         }
@@ -179,7 +179,7 @@ fun SettingsScreen(
                 }
             }
             item {
-                Hinted("Qui prépare la vidéo : le serveur (SERVER) ou la TV elle-même (TV).") {
+                Hinted("Qui prépare la vidéo : le serveur (SERVER) ou l'appareil lui-même (TV).") {
                     Cycle("Puissance", settings.engine.name, listOf(Engine.SERVER.name, Engine.TV.name)) {
                         onChange(settings.copy(engine = Engine.valueOf(it)))
                     }
@@ -246,19 +246,32 @@ fun SettingsScreen(
 /** Option suivie d'une explication d'une ligne. */
 @Composable
 private fun Hinted(hint: String, content: @Composable () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        content()
-        Text(
-            hint,
-            color = Color(0xFF9AA3AD),
-            fontSize = 10.5.sp,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+    val narrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 700
+    if (narrow) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            content()
+            Text(
+                hint,
+                color = Color(0xFF9AA3AD),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+        }
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            content()
+            Text(
+                hint,
+                color = Color(0xFF9AA3AD),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -285,7 +298,7 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
     Text(
         label,
         color = if (primary || focused) Ink else (tint ?: Paper),
-        fontSize = 11.sp,
+        fontSize = 14.sp,
         modifier = Modifier
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .bringIntoViewRequester(bring)
@@ -302,6 +315,6 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
             }
             .focusable()
             .themedButton(fill, focused)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
     )
 }

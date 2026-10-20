@@ -79,7 +79,7 @@ import tv.plexiplay.ui.theme.Ink
 import tv.plexiplay.ui.theme.Paper
 import tv.plexiplay.ui.theme.Signal
 
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MovieDetailScreen(
     seed: Metadata,
@@ -98,6 +98,8 @@ fun MovieDetailScreen(
     accountToken: String = "",
 ) {
     val context = LocalContext.current
+    // Téléphone en portrait : une colonne qui défile, boutons qui passent à la ligne.
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
     // Distribution : épisodes = principaux de la série puis invités ; films = acteurs du film. Fiche d'un acteur au clic.
     var cast by remember(seed.ratingKey) { mutableStateOf<List<CastEntry>>(emptyList()) }
     var actor by remember(seed.ratingKey) { mutableStateOf<CastEntry?>(null) }
@@ -292,8 +294,14 @@ fun MovieDetailScreen(
                     ),
                 ),
             )
-            Column(Modifier.fillMaxWidth(0.56f).fillMaxHeight().padding(start = 36.dp, top = 28.dp, end = 16.dp, bottom = 88.dp)) {
-                Text(movie.title, color = Paper, fontSize = 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column(
+                Modifier
+                    .fillMaxWidth(if (compact) 1f else 0.56f)
+                    .fillMaxHeight()
+                    .then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+                    .padding(start = if (compact) 16.dp else 36.dp, top = if (compact) 16.dp else 28.dp, end = 16.dp, bottom = if (compact) 200.dp else 88.dp),
+            ) {
+                Text(movie.title, color = Paper, fontSize = if (compact) 24.sp else 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val episodeLine = if (movie.type == "episode") {
                     listOf(movie.grandparentTitle, if (movie.parentIndex > 0 && movie.index > 0) "S${movie.parentIndex} E${movie.index}" else "")
                         .filter { it.isNotBlank() }
@@ -358,11 +366,8 @@ fun MovieDetailScreen(
                 }
             }
         }
-        Row(
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val leftBar: @Composable () -> Unit = {
+
             if (movie.viewOffset >= 30_000L) {
                 Action("Reprendre à ${resumeLabel(movie.viewOffset)}", playFocus, primary = true) {
                     onPlay(movie, resolution, audio, subtitles, true)
@@ -384,7 +389,8 @@ fun MovieDetailScreen(
                     }
                 }.start()
             }
-            Spacer(Modifier.weight(1f))
+        }
+        val rightBar: @Composable () -> Unit = {
             Cycle("Résolution", resolutionChoices.firstOrNull { it.first == resolution }?.second ?: "Native") {
                 menu = if (menu == "resolution") null else "resolution"
             }
@@ -393,6 +399,26 @@ fun MovieDetailScreen(
             }
             Cycle("Sous-titres", subtitleChoices.firstOrNull { it.id == subtitles }?.label ?: "Sans") {
                 menu = if (menu == "subs") null else "subs"
+            }
+        }
+        if (compact) {
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                leftBar()
+                rightBar()
+            }
+        } else {
+            Row(
+                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                leftBar()
+                Spacer(Modifier.weight(1f))
+                rightBar()
             }
         }
         if (menu != null) {
@@ -404,7 +430,7 @@ fun MovieDetailScreen(
             ChoiceList(
                 picks = picks,
                 firstFocus = menuFocus,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 36.dp, bottom = 96.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 16.dp else 36.dp, bottom = if (compact) 150.dp else 96.dp),
             ) { id ->
                 when (menu) {
                     "audio" -> audio = id
@@ -425,11 +451,12 @@ fun MovieDetailScreen(
                     movie.tagline
                 },
                 summary = movie.summary,
+                onClose = { summaryOpen = false },
             )
         }
         val openActor = actor
         if (openActor != null && posters != null) {
-            ActorDialog(entry = openActor, info = person, posters = posters, thumbs = roleImages)
+            ActorDialog(entry = openActor, info = person, posters = posters, thumbs = roleImages, onClose = { actor = null })
         }
     }
 }

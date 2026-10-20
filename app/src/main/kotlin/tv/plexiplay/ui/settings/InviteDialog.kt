@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.settings
 
+import tv.plexiplay.ui.theme.tap
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -31,6 +33,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.sp
 import tv.plexiplay.plex.PlexInvite
 import tv.plexiplay.ui.theme.Accent
@@ -52,6 +56,7 @@ fun InviteDialog(invites: List<PlexInvite>, busy: Boolean, onAccept: () -> Unit,
             .fillMaxSize()
             .background(Color(0xCC000000))
             .focusRequester(focus)
+            .tap { }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
@@ -72,7 +77,7 @@ fun InviteDialog(invites: List<PlexInvite>, busy: Boolean, onAccept: () -> Unit,
     ) {
         Column(
             Modifier
-                .width(520.dp)
+                .widthIn(max = 520.dp).fillMaxWidth(0.94f)
                 .background(Panel, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(10.dp))
                 .padding(20.dp),
@@ -106,8 +111,8 @@ fun InviteDialog(invites: List<PlexInvite>, busy: Boolean, onAccept: () -> Unit,
                 if (busy) {
                     Text("Acceptation en cours…", color = Green, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 } else {
-                    InviteButton("Accepter", choice == 0)
-                    InviteButton("Plus tard", choice == 1)
+                    InviteButton("Accepter", choice == 0) { onAccept() }
+                    InviteButton("Plus tard", choice == 1) { onLater() }
                 }
             }
         }
@@ -115,7 +120,7 @@ fun InviteDialog(invites: List<PlexInvite>, busy: Boolean, onAccept: () -> Unit,
 }
 
 @Composable
-private fun InviteButton(label: String, selected: Boolean) {
+private fun InviteButton(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         color = if (selected) Ink else Paper,
@@ -124,7 +129,8 @@ private fun InviteButton(label: String, selected: Boolean) {
         modifier = Modifier
             .width(120.dp)
             .themedButton(if (selected) Accent else Color(0xFF2A333C), selected)
-            .padding(vertical = 8.dp),
+            .tap { onClick() }
+            .padding(vertical = 12.dp),
         textAlign = TextAlign.Center,
     )
 }

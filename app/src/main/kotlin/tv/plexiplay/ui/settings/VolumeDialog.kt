@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.settings
 
+import tv.plexiplay.ui.theme.tap
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -94,7 +96,8 @@ fun VolumeDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .themedButton(if (selected) Accent else Color(0xFF2A333C), selected)
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                            .tap { onPick(value) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                     )
                 }
             }

@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.shell
 
+import tv.plexiplay.ui.theme.tap
+
 import tv.plexiplay.ui.theme.themedButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +33,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.unit.sp
 import tv.plexiplay.ui.theme.Accent
 import tv.plexiplay.ui.theme.Ink
@@ -48,6 +52,7 @@ fun ConfirmDialog(question: String, onYes: () -> Unit, onNo: () -> Unit) {
             .fillMaxSize()
             .background(Color(0xCC000000))
             .focusRequester(focus)
+            .tap { }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
@@ -66,7 +71,7 @@ fun ConfirmDialog(question: String, onYes: () -> Unit, onNo: () -> Unit) {
     ) {
         Column(
             Modifier
-                .width(380.dp)
+                .widthIn(max = 380.dp).fillMaxWidth(0.92f)
                 .background(Panel, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(10.dp))
                 .padding(20.dp),
@@ -75,15 +80,15 @@ fun ConfirmDialog(question: String, onYes: () -> Unit, onNo: () -> Unit) {
             Text("Êtes-vous sûr ?", color = Paper, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(question, color = Color(0xFFC5CDD6), fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                ConfirmButton("Oui", choice == 0)
-                ConfirmButton("Non", choice == 1)
+                ConfirmButton("Oui", choice == 0) { onYes() }
+                ConfirmButton("Non", choice == 1) { onNo() }
             }
         }
     }
 }
 
 @Composable
-private fun ConfirmButton(label: String, selected: Boolean) {
+private fun ConfirmButton(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         color = if (selected) Ink else Paper,
@@ -92,7 +97,8 @@ private fun ConfirmButton(label: String, selected: Boolean) {
         modifier = Modifier
             .width(110.dp)
             .themedButton(if (selected) Accent else Color(0xFF2A333C), selected)
-            .padding(vertical = 8.dp),
+            .tap { onClick() }
+            .padding(vertical = 12.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
 }

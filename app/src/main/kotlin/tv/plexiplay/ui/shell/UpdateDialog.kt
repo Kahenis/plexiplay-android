@@ -1,5 +1,7 @@
 package tv.plexiplay.ui.shell
 
+import tv.plexiplay.ui.theme.tap
+
 import tv.plexiplay.ui.theme.themedButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -39,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.sp
 import tv.plexiplay.R
 import tv.plexiplay.ui.theme.Accent
@@ -62,6 +65,7 @@ fun UpdateDialog(current: String, offered: String, downloading: Boolean, progres
             .fillMaxSize()
             .background(Color(0xCC000000))
             .focusRequester(focus)
+            .tap { }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
@@ -82,7 +86,7 @@ fun UpdateDialog(current: String, offered: String, downloading: Boolean, progres
     ) {
         Row(
             Modifier
-                .width(470.dp)
+                .widthIn(max = 470.dp).fillMaxWidth(0.94f)
                 .background(Panel, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(10.dp))
                 .padding(20.dp),
@@ -107,8 +111,8 @@ fun UpdateDialog(current: String, offered: String, downloading: Boolean, progres
                     if (detail.isNotBlank()) Text(detail, color = Color(0xFFC5CDD6), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        UpdateButton("Installer", choice == 0)
-                        UpdateButton("Plus tard", choice == 1)
+                        UpdateButton("Installer", choice == 0) { onInstall() }
+                        UpdateButton("Plus tard", choice == 1) { onLater() }
                     }
                 }
             }
@@ -117,7 +121,7 @@ fun UpdateDialog(current: String, offered: String, downloading: Boolean, progres
 }
 
 @Composable
-private fun UpdateButton(label: String, selected: Boolean) {
+private fun UpdateButton(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         color = if (selected) Ink else Paper,
@@ -126,7 +130,8 @@ private fun UpdateButton(label: String, selected: Boolean) {
         modifier = Modifier
             .width(110.dp)
             .themedButton(if (selected) Accent else Color(0xFF2A333C), selected)
-            .padding(vertical = 8.dp),
+            .tap { onClick() }
+            .padding(vertical = 12.dp),
         textAlign = TextAlign.Center,
     )
 }
