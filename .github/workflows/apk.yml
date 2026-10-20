@@ -1,0 +1,72 @@
+name: apk
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: SDK Android préinstallé sur le runner
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" || true
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+      - name: Compilation
+        id: build
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Résumé des erreurs dans les annotations
+        if: failure()
+        run: |
+          grep -nE "^e: |error:|FAILED|What went wrong|Could not|Unresolved|Caused by" build.log | head -12 | cut -c1-400 | while IFS= read -r line; do
+            echo "::error title=build::${line}"
+          done
+          tail -n 25 build.log | cut -c1-300 | while IFS= read -r line; do
+            echo "::notice title=fin-du-log::${line}"
+          done
+      - name: Pousser le journal d'erreur sur la branche build-log
+        if: failure()
+        run: |
+          grep -nE "^e: |error:|FAILED|What went wrong|Could not|Unresolved|Caused by" build.log | head -60 | cut -c1-500 > errors.txt || true
+          tail -n 60 build.log | cut -c1-400 > tail.txt || true
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -q --orphan build-log
+          git rm -rf -q . || true
+          git add -f errors.txt tail.txt
+          git commit -q -m "Journal de compilation ${GITHUB_SHA::7}"
+          git push -f origin build-log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Plexiplay-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/mapping/release/mapping.txt
+      - name: Publier l'APK dans une release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          FILE="PlexiPlay-${VER}.apk"
+          cp app/build/outputs/apk/release/*.apk "$FILE"
+          TAG="v${VER}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            # Version de test : « pre-release » pour que le repli de mise à jour (GitHub « dernière version ») ne la propose pas.
+            # La version stable, celle de guilard.com/dl, est passée en release normale à la main dans GitHub.
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "v${VER}" --notes "Version de test (pre-release). APK obfusqué (R8) signé, compilé automatiquement depuis le commit ${GITHUB_SHA::7}."
+          fi

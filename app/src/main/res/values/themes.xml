@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Plexiplay" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@drawable/boot_window</item>
+        <item name="android:colorBackground">@color/ink</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
