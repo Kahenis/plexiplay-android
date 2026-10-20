@@ -6,6 +6,8 @@ import android.os.Looper
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.background
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.Composable
@@ -84,7 +86,16 @@ class MainActivity : AppCompatActivity() {
         val updates = AppUpdate(http)
         setContent {
             PlexiplayTheme {
-                App(store, client, auth, posters, updates, ::applyLanguage)
+                // Téléphone / tablette : l'appli laisse la place à la barre de navigation d'Android (◁ ○ □),
+                // en bas en portrait, sur le côté en paysage. Pendant la lecture les barres sont masquées : marge nulle.
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier
+                        .fillMaxSize()
+                        .background(androidx.compose.ui.graphics.Color.Black)
+                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars),
+                ) {
+                    App(store, client, auth, posters, updates, ::applyLanguage)
+                }
             }
         }
     }

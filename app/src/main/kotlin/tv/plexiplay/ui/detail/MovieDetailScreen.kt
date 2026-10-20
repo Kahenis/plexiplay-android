@@ -104,7 +104,9 @@ fun MovieDetailScreen(
     val compact = configuration.screenWidthDp < 600
     // Tablette en portrait : colonne de texte plus large, boutons qui passent à la ligne.
     val portrait = !compact && configuration.screenHeightDp > configuration.screenWidthDp
-    val wrapBar = compact || portrait
+    // Une seule ligne de boutons seulement si l'écran est assez large (tablette en paysage) ;
+    // téléphone en paysage : deux lignes, sinon les boutons de choix sont écrasés.
+    val wrapBar = compact || portrait || configuration.screenWidthDp < 1100
     // Hauteur mesurée de la barre de boutons : la zone d'informations s'arrête au-dessus (plus de chevauchement).
     var barHeightPx by remember { mutableStateOf(0) }
     val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) { barHeightPx.toDp() }
@@ -304,7 +306,7 @@ fun MovieDetailScreen(
             )
             Column(
                 Modifier
-                    .fillMaxWidth(if (compact) 1f else if (portrait) 0.9f else 0.56f)
+                    .fillMaxWidth(if (compact) 1f else if (portrait) 0.9f else if (wrapBar) 0.72f else 0.56f)
                     .fillMaxHeight()
                     .padding(bottom = barHeight)
                     .verticalScroll(rememberScrollState())

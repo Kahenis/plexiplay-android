@@ -42,6 +42,12 @@
 - Constat (tablette en portrait) : la barre unique passait à la ligne n'importe où ; « 4K » restait à côté de « Marquer comme lu », Audio et Sous-titres en dessous.
 - Quand les boutons passent à la ligne (`wrapBar` : téléphone, tablette en portrait) : deux `FlowRow` dans une colonne, actions (Lecture, Bandes-annonces, Marquer comme lu) en haut, choix (Résolution, Audio, Sous-titres) en dessous, alignés à gauche. La liste de choix s'ouvre à gauche, au-dessus de la barre. Tablette en paysage inchangée (une ligne, choix à droite, liste à droite).
 
+## 1.5.5 : barre de navigation Android, fiche sur téléphone en paysage
+
+- Constat (captures téléphone et pliant) : l'appli dessinait sous la barre de navigation d'Android (◁ ○ □) : boutons Résolution / Audio / Sous-titres à moitié cachés en portrait, bord des affiches recouvert en paysage (Android 15 impose l'affichage bord à bord avec `targetSdk 35`).
+- `MainActivity.setContent` : `App` est placé dans une `Box` noire avec `windowInsetsPadding(WindowInsets.navigationBars)`. Pendant la lecture, `ImmersiveLandscape` masque les barres : la marge tombe à zéro, le lecteur reste plein écran.
+- Fiche film sur téléphone en paysage : la ligne unique écrasait les boutons de choix (« Audio » écrit lettre par lettre), la barre prenait toute la hauteur et cachait les informations. `wrapBar` vaut désormais aussi pour une largeur < 1100 dp (deux lignes : actions, puis choix) ; colonne d'informations à 72 % de la largeur dans ce cas.
+
 ---
 
 # Notes de développement (Plexiplay clone)
