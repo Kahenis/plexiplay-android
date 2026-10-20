@@ -53,6 +53,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -99,7 +100,14 @@ fun MovieDetailScreen(
 ) {
     val context = LocalContext.current
     // Téléphone en portrait : une colonne qui défile, boutons qui passent à la ligne.
-    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val compact = configuration.screenWidthDp < 600
+    // Tablette en portrait : colonne de texte plus large, boutons qui passent à la ligne.
+    val portrait = !compact && configuration.screenHeightDp > configuration.screenWidthDp
+    val wrapBar = compact || portrait
+    // Hauteur mesurée de la barre de boutons : la zone d'informations s'arrête au-dessus (plus de chevauchement).
+    var barHeightPx by remember { mutableStateOf(0) }
+    val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) { barHeightPx.toDp() }
     // Distribution : épisodes = principaux de la série puis invités ; films = acteurs du film. Fiche d'un acteur au clic.
     var cast by remember(seed.ratingKey) { mutableStateOf<List<CastEntry>>(emptyList()) }
     var actor by remember(seed.ratingKey) { mutableStateOf<CastEntry?>(null) }
@@ -296,10 +304,11 @@ fun MovieDetailScreen(
             )
             Column(
                 Modifier
-                    .fillMaxWidth(if (compact) 1f else 0.56f)
+                    .fillMaxWidth(if (compact) 1f else if (portrait) 0.9f else 0.56f)
                     .fillMaxHeight()
-                    .then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
-                    .padding(start = if (compact) 16.dp else 36.dp, top = if (compact) 16.dp else 28.dp, end = 16.dp, bottom = if (compact) 200.dp else 88.dp),
+                    .padding(bottom = barHeight)
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = if (compact) 16.dp else 36.dp, top = if (compact) 16.dp else 28.dp, end = 16.dp, bottom = 12.dp),
             ) {
                 Text(movie.title, color = Paper, fontSize = if (compact) 24.sp else 32.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val episodeLine = if (movie.type == "episode") {
@@ -401,9 +410,10 @@ fun MovieDetailScreen(
                 menu = if (menu == "subs") null else "subs"
             }
         }
-        if (compact) {
+        val measureBar = Modifier.onSizeChanged { barHeightPx = it.height }
+        if (wrapBar) {
             androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.align(Alignment.BottomStart).then(measureBar).fillMaxWidth().padding(horizontal = if (compact) 16.dp else 36.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -412,7 +422,7 @@ fun MovieDetailScreen(
             }
         } else {
             Row(
-                modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp),
+                modifier = Modifier.align(Alignment.BottomStart).then(measureBar).fillMaxWidth().padding(horizontal = 36.dp, vertical = 22.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -430,7 +440,7 @@ fun MovieDetailScreen(
             ChoiceList(
                 picks = picks,
                 firstFocus = menuFocus,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 16.dp else 36.dp, bottom = if (compact) 150.dp else 96.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = if (compact) 16.dp else 36.dp, bottom = barHeight + 8.dp),
             ) { id ->
                 when (menu) {
                     "audio" -> audio = id

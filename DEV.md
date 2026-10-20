@@ -30,6 +30,13 @@
 - `apk.yml` : `gh release create … --latest` (plus `--prerelease`) ; si le tag existe déjà, l'APK est remplacé et la release repassée en normale et « latest ».
 - La v1.5.1 reste en pre-release (pas modifiable depuis la session de Claude) : sans conséquence, la 1.5.2 passe devant.
 
+## 1.5.3 : fiche film, boutons qui recouvraient la distribution
+
+- Constat (tablette) : les boutons du bas (Lecture, Bandes-annonces, Résolution…) recouvraient les noms des acteurs. Cause : la barre est posée par-dessus la page, la colonne d'informations ne lui réservait qu'une marge fixe pensée pour la TV (88 dp, 200 dp sur téléphone).
+- `MovieDetailScreen` : la hauteur réelle de la barre est mesurée (`onSizeChanged` → `barHeightPx`) ; la colonne d'informations s'arrête au-dessus et défile toujours (`verticalScroll`, tablette comprise). Les listes Résolution / Audio / Sous-titres s'ouvrent à `barHeight + 8 dp`.
+- Tablette en portrait (`portrait` : ≥ 600 dp de large, plus haute que large) : colonne de texte à 90 % de la largeur (au lieu de 56 %) et boutons qui passent à la ligne (`FlowRow`, comme sur téléphone).
+- S'applique aussi à la fiche d'un épisode (même écran).
+
 ---
 
 # Notes de développement (Plexiplay clone)
