@@ -12,35 +12,11 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 
-data class UpdateOffer(val version: String, val url: String, val fromServer: Boolean = false)
-
-/** Serveur de mise à jour de Jeff : `version.txt` (une ligne, ex. 1.2.94) et `plexiplay.apk` dans le même dossier. */
-private const val SERVER_DIR = "https://guilard.com/dl/android/"
+data class UpdateOffer(val version: String, val url: String)
 
 class AppUpdate(private val http: OkHttpClient) {
-    /** Cherche d'abord sur guilard.com ; si le serveur ne répond pas correctement, retombe sur GitHub. */
-    fun latest(localVersion: String): UpdateOffer? {
-        val server = runCatching { serverVersion() }.getOrNull()
-        if (server != null) {
-            return if (newer(server, localVersion)) UpdateOffer(server, SERVER_DIR + "plexiplay.apk", fromServer = true) else null
-        }
-        return githubLatest(localVersion)
-    }
-
-    private fun serverVersion(): String? {
-        val client = http.newBuilder().connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS).readTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build()
-        val request = Request.Builder()
-            .url(SERVER_DIR + "version.txt?t=" + System.currentTimeMillis())
-            .header("Cache-Control", "no-cache")
-            .header("User-Agent", "Plexiplay")
-            .get()
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val text = response.body?.string().orEmpty().trim().removePrefix("v")
-            return if (Regex("""\d+(\.\d+){1,3}""").matches(text)) text else null
-        }
-    }
+    /** Canal unique : dernière release (non pre-release) du dépôt GitHub Kahenis/plexiplay-android. */
+    fun latest(localVersion: String): UpdateOffer? = githubLatest(localVersion)
 
     private fun githubLatest(localVersion: String): UpdateOffer? {
         val request = Request.Builder()
@@ -138,7 +114,6 @@ class AppUpdate(private val http: OkHttpClient) {
             val t0 = System.currentTimeMillis()
             var lastText = 0L
             val stats = DownloadStats()
-            var source = offer.url
             val progress: (Long, Long, Double) -> Unit = { done, total, instant ->
                 onProgress(done.toFloat() / total)
                 val now = System.currentTimeMillis()
@@ -152,18 +127,8 @@ class AppUpdate(private val http: OkHttpClient) {
                     )
                 }
             }
-            try {
-                download(source, file, stats, progress)
-            } catch (e: Exception) {
-                if (!offer.fromServer) throw e
-                // Le serveur de Jeff ne répond pas : on retombe sur GitHub.
-                val github = githubLatest("0.0.0") ?: throw e
-                onDetail("Serveur indisponible, téléchargement depuis GitHub…")
-                source = github.url
-                stats.readMs = 0; stats.writeMs = 0; stats.peak = 0.0; stats.last = 0.0
-                download(source, file, stats, progress)
-            }
-            checkApk(context, file, if (source == offer.url && offer.fromServer) offer.version else null)
+            download(offer.url, file, stats, progress)
+            checkApk(context, file, offer.version)
             val t1 = System.currentTimeMillis()
             onProgress(1f)
             onDetail("Préparation de l'installation…")
@@ -177,12 +142,12 @@ class AppUpdate(private val http: OkHttpClient) {
         }.getOrElse { it.message ?: "Installation impossible" }
     }
 
-    /** Vérifie que le fichier est bien un APK de Plexiplay, plus récent que la version installée (et égal à version.txt si fourni). */
+    /** Vérifie que le fichier est bien un APK de Plexiplay, plus récent que la version installée (et de la version annoncée par la release). */
     private fun checkApk(context: Context, apk: File, expected: String?) {
         val info = context.packageManager.getPackageArchiveInfo(apk.path, 0) ?: error("Fichier de mise à jour illisible")
         if (info.packageName != context.packageName) error("Ce fichier n'est pas Plexiplay")
         val found = info.versionName.orEmpty()
-        if (expected != null && found != expected) error("Le serveur propose la version $found au lieu de $expected")
+        if (expected != null && found != expected) error("La release annonce $expected mais le fichier contient $found")
         val installed = context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
         if (!newer(found, installed)) error("Le fichier téléchargé ($found) n'est pas plus récent que $installed")
     }

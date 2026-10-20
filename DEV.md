@@ -4,7 +4,7 @@
 
 - Code de départ : version TV 1.4.1 (sans historique). Même cœur `core/plex`, `core/player`.
 - Identifiant `tv.plexiplay.mobile`, nom d'appareil Plex « Plexiplay Android ». Le lanceur normal est ajouté ; `leanback` n'est plus obligatoire ; rotation libre.
-- Mise à jour : `https://guilard.com/dl/android/version.txt` + `plexiplay.apk`, repli sur les releases de ce dépôt.
+- Mise à jour : canal unique, la dernière release GitHub de ce dépôt (voir 1.5.2).
 - Pas d'obfuscation (R8 désactivé) tant que le dépôt est public. Modules verrouillés ouverts le temps du chantier tactile.
 
 ### Tactile (1.5.0)
@@ -17,12 +17,18 @@
 - Dialogues (confirmation, mise à jour, invitations, bibliothèques, volume) : lignes et boutons tactiles ; un fond `tap { }` empêche les toucher de traverser.
 - Lecteur (ExoPlayer et mpv) : `ui/player/TouchControls.kt` — toucher = afficher/masquer les commandes, double toucher = ±10 s, glissement vertical = luminosité (gauche) / volume (droite), barre de progression tactile (toucher ou glisser, saut au relâchement), listes audio et sous-titres tactiles, écran en paysage et barres masquées pendant la lecture, pause quand l'appli passe en arrière-plan.
 - `MainActivity.onStop` ne ferme plus l'appli (comportement TV retiré).
-- Mise à jour par la TV : `guilard.com/dl/android/` puis les releases de ce dépôt.
 
 ## 1.5.1 : réglage « Puissance » retiré
 
 - Testé sur tablette : fonctionne bien dans l'ensemble.
 - Paramètres : la ligne « Puissance » (SERVER / TV) est supprimée. `SessionStore.settings()` fixe `engine = Engine.TV` (l'appareil lit lui-même ce qu'il sait décoder, le serveur ne convertit que le reste), y compris pour un ancien choix SERVER. Le nom interne `TV` est conservé (partagé avec `core/player`).
+
+## 1.5.2 : mise à jour par GitHub uniquement
+
+- Constat : aucune mise à jour détectée. `guilard.com/dl/android/` ne répond pas, et le workflow (repris de la TV) publiait les versions en pre-release, que l'API « releases/latest » ignore : réponse 404.
+- Canal unique : la dernière release normale de `Kahenis/plexiplay-android`. `AppUpdate.latest` interroge directement GitHub (plus de guilard.com, plus d'attente de 14 s quand le serveur ne répond pas). `UpdateOffer.fromServer` et le repli serveur → GitHub sont retirés. `checkApk` vérifie le paquet, la version annoncée par la release et qu'elle est plus récente.
+- `apk.yml` : `gh release create … --latest` (plus `--prerelease`) ; si le tag existe déjà, l'APK est remplacé et la release repassée en normale et « latest ».
+- La v1.5.1 reste en pre-release (pas modifiable depuis la session de Claude) : sans conséquence, la 1.5.2 passe devant.
 
 ---
 

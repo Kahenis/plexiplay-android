@@ -63,10 +63,10 @@ jobs:
           FILE="PlexiPlay-${VER}.apk"
           cp app/build/outputs/apk/release/*.apk "$FILE"
           TAG="v${VER}"
+          # Canal de mise à jour unique : la dernière release normale de ce dépôt (pas de pre-release).
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "$FILE" --clobber
+            gh release edit "$TAG" --prerelease=false --latest
           else
-            # Version de test : « pre-release » pour que le repli de mise à jour (GitHub « dernière version ») ne la propose pas.
-            # La version stable, celle de guilard.com/dl, est passée en release normale à la main dans GitHub.
-            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "v${VER}" --notes "Version de test (pre-release). APK obfusqué (R8) signé, compilé automatiquement depuis le commit ${GITHUB_SHA::7}."
+            gh release create "$TAG" "$FILE" --latest --target "$GITHUB_SHA" --title "v${VER}" --notes "Plexiplay tablette / smartphone ${VER}. APK signé, compilé automatiquement depuis le commit ${GITHUB_SHA::7}."
           fi
