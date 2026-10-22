@@ -124,6 +124,8 @@ fun PlayerScreen(
     aspect: AspectMode,
     engine: Engine,
     playerKind: PlayerKind = PlayerKind.EXO,
+    // Volume du lecteur pendant un preroll (0 à 1) ; le film et les bandes-annonces gardent 1.
+    prerollVolume: Float = 0.75f,
     onProgress: (ratingKey: String, state: String, position: Long, duration: Long) -> Unit,
     onExit: () -> Unit,
     onRegisterBack: ((() -> Boolean)?) -> Unit = {},
@@ -140,7 +142,7 @@ fun PlayerScreen(
     onReload: suspend (ClipPlay, Int, Int, Long, String) -> Boolean = { _, _, _, _, _ -> false },
 ) {
     if (playerKind == PlayerKind.MPV) {
-        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen)
+        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume)
         return
     }
     var infoVisible by remember { mutableStateOf(false) }
@@ -253,6 +255,7 @@ fun PlayerScreen(
             if (startAt > 0L) setMediaItems(items, startIndex, startAt) else setMediaItems(items)
             prepare()
             playWhenReady = true
+            volume = if (clips.getOrNull(startIndex)?.kind == ClipKind.PREROLL) prerollVolume * prerollVolume else 1f
             clips.firstOrNull()?.let { applyTracks(this, it) }
         }
     }
@@ -620,6 +623,7 @@ fun PlayerScreen(
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 refreshAudioTag()
                 val clip = clips.getOrNull(player.currentMediaItemIndex)
+                player.volume = if (clip?.kind == ClipKind.PREROLL) prerollVolume * prerollVolume else 1f
                 status = clip?.label ?: ""
                 selection[0] = -1
                 selection[1] = 0

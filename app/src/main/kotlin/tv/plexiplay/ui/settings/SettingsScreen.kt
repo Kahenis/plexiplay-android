@@ -76,10 +76,13 @@ fun SettingsScreen(
     onTheme: (String) -> Unit = {},
     themeVolume: Int = 20,
     onThemeVolume: (Int) -> Unit = {},
+    prerollVolume: Int = 75,
+    onPrerollVolume: (Int) -> Unit = {},
     inviteStatus: String = "",
     onCheckInvites: () -> Unit = {},
 ) {
     var volumeOpen by remember { mutableStateOf(false) }
+    var prerollOpen by remember { mutableStateOf(false) }
     // Le focus part sur la première option : sans lui, Retour n'arrive pas à l'écran principal.
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -95,6 +98,20 @@ fun SettingsScreen(
                     volumeOpen = false
                 },
                 onDismiss = { volumeOpen = false },
+            )
+        }
+        if (prerollOpen) {
+            VolumeDialog(
+                current = prerollVolume,
+                onPick = {
+                    onPrerollVolume(it)
+                    prerollOpen = false
+                },
+                onDismiss = { prerollOpen = false },
+                values = PrerollVolumes,
+                title = "Volume des prerolls",
+                subtitle = "Annonces avant le film, par rapport au film",
+                zeroLabel = false,
             )
         }
         LazyColumn(
@@ -175,6 +192,11 @@ fun SettingsScreen(
             item {
                 Hinted("Musique de générique des fiches de saisons et d'épisodes (0 à 50 %).") {
                     Chip("Volume du générique : " + (if (themeVolume == 0) "muet" else "$themeVolume %")) { volumeOpen = true }
+                }
+            }
+            item {
+                Hinted("Volume des annonces avant le film (20 à 100 %). Le film garde son volume normal.") {
+                    Chip("Volume des prerolls : $prerollVolume %") { prerollOpen = true }
                 }
             }
             item {

@@ -50,7 +50,9 @@ jobs:
           git commit -q -m "Journal de compilation ${GITHUB_SHA::7}"
           git push -f origin build-log
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
+          retention-days: 1
           name: Plexiplay-release
           path: |
             app/build/outputs/apk/release/*.apk

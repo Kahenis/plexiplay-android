@@ -129,6 +129,7 @@ private fun App(
 ) {
     remember { tv.plexiplay.ui.theme.ThemeMode.neon = store.theme() == "neon"; true }
     var themeVolume by remember { mutableIntStateOf(store.themeVolume()) }
+    var prerollVolume by remember { mutableIntStateOf(store.prerollVolume()) }
     var token by remember { mutableStateOf(store.token()) }
     var servers by remember { mutableStateOf(store.servers()) }
     var serverIndex by remember { mutableStateOf(store.activeServerIndex()) }
@@ -707,6 +708,11 @@ private fun App(
                         store.saveThemeVolume(it)
                         themeVolume = it
                     },
+                    prerollVolume = prerollVolume,
+                    onPrerollVolume = {
+                        store.savePrerollVolume(it)
+                        prerollVolume = it
+                    },
                     onTheme = {
                         store.saveTheme(it)
                         tv.plexiplay.ui.theme.ThemeMode.neon = it == "neon"
@@ -799,6 +805,7 @@ private fun App(
             aspect = settings.aspect,
             engine = settings.engine,
             playerKind = settings.player,
+            prerollVolume = prerollVolume / 100f,
             onProgress = { key, state, position, duration ->
                 val active = server ?: return@PlayerScreen
                 // Rapport au serveur (« Lecture en cours », Tautulli) : tout de suite quand l'état change,

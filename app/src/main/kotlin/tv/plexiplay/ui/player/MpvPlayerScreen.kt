@@ -120,6 +120,7 @@ internal fun MpvPlayerScreen(
     onRegisterBack: ((() -> Boolean)?) -> Unit,
     onAudioChosen: (ClipPlay) -> Unit = {},
     onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
+    prerollVolume: Float = 0.75f,
 ) {
     val scope = rememberCoroutineScope()
     var notice by remember { mutableStateOf("") }
@@ -170,6 +171,11 @@ internal fun MpvPlayerScreen(
             val tracks = core?.get(MpvProperties.TrackList)?.getOrNull().orEmpty()
             val clip = clips.getOrNull(pos)
             val sign = "$pos:${tracks.size}:${tracks.firstOrNull()?.id}:${clip?.subtitleUrl}"
+            if (clip != null) {
+                // Volume d'un preroll : réduit ; le film et les bandes-annonces gardent 100 %.
+                val wanted = if (clip.kind == ClipKind.PREROLL) (prerollVolume * 100).toInt() else 100
+                if (core?.getString("volume")?.toDoubleOrNull()?.toInt() != wanted) runCatching { core?.setString("volume", wanted.toString()) }
+            }
             if (clip != null && tracks.isNotEmpty() && sign != signature) {
                 applyMpvChoice(view, clip, tracks, pos, added)
                 if (clip.startMs > 0L && resumed.add(pos)) {

@@ -189,12 +189,12 @@ fun MovieDetailScreen(
     }
     val themePlayer = remember {
         ExoPlayer.Builder(context).build().apply {
-            volume = themeVolume
+            volume = themeVolume * themeVolume
             repeatMode = Player.REPEAT_MODE_OFF
             setAudioAttributes(quiet, false)
         }
     }
-    LaunchedEffect(themeVolume) { themePlayer.volume = themeVolume }
+    LaunchedEffect(themeVolume) { themePlayer.volume = themeVolume * themeVolume }
     DisposableEffect(trailerPlayer, themePlayer) {
         onDispose {
             trailerPlayer.release()

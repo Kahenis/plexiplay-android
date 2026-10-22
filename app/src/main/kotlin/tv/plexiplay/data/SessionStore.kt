@@ -103,11 +103,18 @@ class SessionStore(context: Context) {
             .apply()
     }
 
-    /** Volume de la musique de générique (0 à 50 %, par paliers de 10), 20 % par défaut. */
-    fun themeVolume(): Int = prefs.getInt("theme_volume", 20).coerceIn(0, 50)
+    /** Volume de la musique de générique (0 à 60 %, par paliers de 10), 40 % par défaut. Nouvelle clé : la courbe a changé en 1.4.4. */
+    fun themeVolume(): Int = prefs.getInt("theme_volume2", 40).coerceIn(0, 60)
 
     fun saveThemeVolume(value: Int) {
-        prefs.edit().putInt("theme_volume", value.coerceIn(0, 50)).apply()
+        prefs.edit().putInt("theme_volume2", value.coerceIn(0, 60)).apply()
+    }
+
+    /** Volume des prerolls (annonces avant le film), de 20 à 100 %, 75 % par défaut. */
+    fun prerollVolume(): Int = prefs.getInt("preroll_volume", 75).coerceIn(20, 100)
+
+    fun savePrerollVolume(value: Int) {
+        prefs.edit().putInt("preroll_volume", value.coerceIn(20, 100)).apply()
     }
 
     fun theme(): String = prefs.getString("theme", "classic") ?: "classic"

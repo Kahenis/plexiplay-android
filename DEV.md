@@ -48,6 +48,14 @@
 - `MainActivity.setContent` : `App` est placé dans une `Box` noire avec `windowInsetsPadding(WindowInsets.navigationBars)`. Pendant la lecture, `ImmersiveLandscape` masque les barres : la marge tombe à zéro, le lecteur reste plein écran.
 - Fiche film sur téléphone en paysage : la ligne unique écrasait les boutons de choix (« Audio » écrit lettre par lettre), la barre prenait toute la hauteur et cachait les informations. `wrapBar` vaut désormais aussi pour une largeur < 1100 dp (deux lignes : actions, puis choix) ; colonne d'informations à 72 % de la largeur dans ce cas.
 
+## 1.5.6 : volume des prerolls et courbe des génériques (repris de la TV 1.4.2 à 1.4.4)
+
+- Reprise à l'identique des versions TV 1.4.2, 1.4.3 et 1.4.4 (dépôt privé `Plexiplay-backup`).
+- Réglage « Volume des prerolls » (Paramètres) : 20 à 100 %, 75 % par défaut, clé `preroll_volume`. Pendant un `ClipKind.PREROLL` le lecteur passe à ce volume, puis 100 % pour le film et les bandes-annonces. ExoPlayer : gain `(pourcentage/100)²` (75 % ≈ −5 dB, 40 % ≈ −16 dB). mpv : propriété `volume` (déjà cubique), réglée par la boucle de suivi.
+- Générique (fiches séries, saisons, épisodes, films) : même courbe `(pourcentage/100)²`, paliers 0 à 60 %, 40 % par défaut, nouvelle clé `theme_volume2` (l'ancien réglage linéaire n'est pas repris).
+- `VolumeDialog` : liste de valeurs, titre et sous-titre en paramètres ; propre au mobile : la liste défile si l'écran est trop bas (téléphone en paysage).
+- CI (repris de la TV) : l'envoi de l'artefact ne bloque plus la publication de l'APK quand le quota de stockage GitHub est atteint.
+
 ---
 
 # Notes de développement (Plexiplay clone)
