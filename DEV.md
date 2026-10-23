@@ -56,6 +56,12 @@
 - `VolumeDialog` : liste de valeurs, titre et sous-titre en paramètres ; propre au mobile : la liste défile si l'écran est trop bas (téléphone en paysage).
 - CI (repris de la TV) : l'envoi de l'artefact ne bloque plus la publication de l'APK quand le quota de stockage GitHub est atteint.
 
+## 1.5.7 : biographies françaises (repris de la TV 1.4.5 et 1.4.7), fiche acteur tactile
+
+- `PlexClient.person()` repris à l'identique de la TV : biographie Plex vide ou anglaise (`looksEnglish`) → article Wikipédia français (`fullWikiText` : texte complet ≈ 2 500 caractères sans titres ni sections de fin, repli sur le résumé `page/summary`). Essais « Nom », « (acteur) », « (actrice) », « (réalisateur) », « (réalisatrice) » ; garde-fous : page « standard », métier du spectacle, au moins 60 caractères. `PersonInfo.altBio` garde la biographie Plex, `fromWikipedia` indique la source. User-Agent Wikipédia « (Android) ». La 1.4.6 (bandes-annonces françaises) n'est pas reprise.
+- `ActorDialog` (mobile) : sélecteur « Wikipédia | Plex » (`BioSwitch`) à côté du titre BIOGRAPHIE quand les deux biographies existent ; choix actif surligné, zones de toucher ≥ 40 dp, retour en haut du texte à chaque bascule (OK de la télécommande bascule aussi). Pas d'indications de télécommande.
+- Œuvres de l'acteur : `FlowRow` (passent à la ligne selon la largeur) au lieu de rangées fixes de 6 qui débordaient en portrait.
+
 ---
 
 # Notes de développement (Plexiplay clone)

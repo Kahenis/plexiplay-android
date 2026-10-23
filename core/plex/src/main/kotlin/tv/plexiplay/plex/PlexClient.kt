@@ -360,7 +360,98 @@ class PlexClient(
             }.getOrDefault(emptyList())
             inLibrary = works.isNotEmpty()
         }
-        return PersonInfo(bio.trim(), works, inLibrary)
+        var altBio = ""
+        var fromWiki = false
+        if (bio.isBlank() || looksEnglish(bio)) {
+            frenchBio(role.tag)?.let {
+                altBio = bio.trim()
+                bio = it
+                fromWiki = true
+            }
+        }
+        return PersonInfo(bio.trim(), works, inLibrary, altBio = altBio, fromWikipedia = fromWiki)
+    }
+
+    /** Texte probablement anglais (la biographie de Plex n'a pas de version française). */
+    private fun looksEnglish(text: String): Boolean {
+        val words = text.lowercase().split(Regex("[^a-zà-ÿ']+")).filter { it.isNotEmpty() }
+        val en = words.count { it in setOf("the", "and", "was", "is", "he", "she", "his", "her", "with", "for", "who", "known", "born", "american", "british") }
+        val fr = words.count { it in setOf("le", "la", "les", "est", "était", "il", "elle", "son", "sa", "avec", "pour", "qui", "connu", "né", "née", "américain", "britannique", "des", "une") }
+        return en >= 2 && en > fr
+    }
+
+    /** Texte de l'article (introduction, carrière, vie privée…) sans titres, filmographies ni références, ~2 500 caractères. */
+    private fun fullWikiText(quick: OkHttpClient, title: String): String? = runCatching {
+        if (title.isBlank()) return@runCatching null
+        val url = "https://fr.wikipedia.org/w/api.php".toHttpUrl().newBuilder()
+            .addQueryParameter("action", "query").addQueryParameter("prop", "extracts")
+            .addQueryParameter("explaintext", "1").addQueryParameter("exsectionformat", "wiki")
+            .addQueryParameter("redirects", "1").addQueryParameter("titles", title)
+            .addQueryParameter("format", "json").addQueryParameter("formatversion", "2").build()
+        val request = Request.Builder().url(url).get()
+            .header("User-Agent", "PlexiPlay/${PlexHeaders.VERSION} (Android)").build()
+        val raw = quick.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@runCatching null
+            response.body?.string().orEmpty()
+        }
+        val text = json.parseToJsonElement(raw).jsonObject["query"]?.jsonObject?.get("pages")?.jsonArray
+            ?.firstOrNull()?.jsonObject?.get("extract")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val stop = setOf("filmographie", "notes et références", "références", "notes", "liens externes", "voir aussi", "bibliographie", "discographie", "distinctions", "récompenses", "publications", "théâtre", "cinéma", "télévision", "doublage", "ouvrages", "sources", "annexes")
+        val heading = Regex("^=+\\s*(.*?)\\s*=+$")
+        val paragraphs = mutableListOf<String>()
+        for (line in text.lines()) {
+            val t = line.trim()
+            val h = heading.find(t)
+            if (h != null) {
+                if (h.groupValues[1].lowercase() in stop) break
+                continue
+            }
+            if (t.length >= 40) paragraphs += t
+        }
+        if (paragraphs.isEmpty()) return@runCatching null
+        val out = StringBuilder()
+        for (p in paragraphs) {
+            if (out.isNotEmpty() && out.length + p.length > 2500) break
+            if (out.isNotEmpty()) out.append("\n\n")
+            out.append(p)
+        }
+        var result = out.toString()
+        if (result.length > 2600) {
+            val cut = result.take(2500).lastIndexOf(". ")
+            result = if (cut > 400) result.take(cut + 1) else result.take(2500)
+        }
+        result.takeIf { it.length >= 60 }
+    }.getOrNull()
+
+    /** Résumé de la page Wikipédia en français de la personne, ou null (homonyme, page absente, réseau). */
+    private fun frenchBio(name: String): String? {
+        val clean = name.trim()
+        if (clean.isBlank()) return null
+        val quick = http.newBuilder().connectTimeout(4, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).build()
+        val jobs = listOf("", " (acteur)", " (actrice)", " (réalisateur)", " (réalisatrice)")
+        val words = setOf("acteur", "actrice", "réalisat", "scénarist", "comédien", "chanteu", "producteur", "productrice", "humorist", "mannequin", "doublage", "animateur", "animatrice", "musicien", "compositeur", "personnalité", "cascadeur", "danseu", "auteur", "autrice", "écrivain")
+        for (suffix in jobs) {
+            val title = java.net.URLEncoder.encode((clean + suffix).replace(' ', '_'), "UTF-8").replace("+", "%20")
+            val result = runCatching {
+                val request = Request.Builder().url("https://fr.wikipedia.org/api/rest_v1/page/summary/$title?redirect=true").get()
+                    .header("User-Agent", "PlexiPlay/${PlexHeaders.VERSION} (Android)")
+                    .header("Accept", "application/json").build()
+                val raw = quick.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@runCatching null
+                    response.body?.string().orEmpty()
+                }
+                val obj = json.parseToJsonElement(raw).jsonObject
+                if (obj["type"]?.jsonPrimitive?.contentOrNull != "standard") return@runCatching null
+                val description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
+                val extract = obj["extract"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+                if (extract.length < 60) return@runCatching null
+                val head = extract.take(400).lowercase()
+                if (words.none { description.contains(it) || head.contains(it) }) return@runCatching null
+                fullWikiText(quick, obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty()) ?: extract
+            }.getOrNull()
+            if (result != null) return result
+        }
+        return null
     }
 
     fun fileUrl(server: ServerEndpoint, path: String?): String? {
@@ -439,4 +530,12 @@ data class PlexInvite(
 
 data class PersonWork(val title: String, val year: Int, val images: List<String>)
 
-data class PersonInfo(val bio: String = "", val works: List<PersonWork> = emptyList(), val worksInLibrary: Boolean = false)
+data class PersonInfo(
+    val bio: String = "",
+    val works: List<PersonWork> = emptyList(),
+    val worksInLibrary: Boolean = false,
+    /** Biographie officielle Plex, gardée à part quand `bio` vient de Wikipédia. */
+    val altBio: String = "",
+    val fromWikipedia: Boolean = false,
+)
+

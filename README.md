@@ -2,7 +2,7 @@
 
 Version tablette et smartphone de Plexiplay, lecteur léger pour un serveur Plex. Projet personnel, non affilié à Plex Inc.
 
-Identifiant : `tv.plexiplay.mobile` (peut coexister avec la version TV `tv.plexiplay.app`). Version 1.5.6.
+Identifiant : `tv.plexiplay.mobile` (peut coexister avec la version TV `tv.plexiplay.app`). Version 1.5.7.
 
 Cette version reprend le cœur de la version TV (connexion Plex, bibliothèques, fiches, lecture directe ou transcodée, mpv, langues et sous-titres, mises à jour) avec une interface pensée pour le tactile.
 

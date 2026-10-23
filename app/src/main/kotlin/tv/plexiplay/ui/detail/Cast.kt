@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -213,6 +215,7 @@ private fun WorkTile(work: PersonWork, posters: PosterStore) {
  * Grande fiche d'un acteur : photo, nom, personnage, biographie et œuvres principales. Haut/bas font défiler ;
  * Retour (géré par l'écran) ferme la fiche.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ActorDialog(
     entry: CastEntry,
@@ -226,6 +229,15 @@ fun ActorDialog(
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // Fiche Wikipédia : le sélecteur « Wikipédia | Plex » bascule vers la biographie officielle Plex (et inversement).
+    var showPlex by remember(info) { mutableStateOf(false) }
+    val canSwitch = info != null && info.fromWikipedia && info.altBio.isNotBlank()
+    val pick: (Boolean) -> Unit = { plex ->
+        if (plex != showPlex) {
+            showPlex = plex
+            scope.launch { scroll.scrollTo(0) }
+        }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -240,6 +252,7 @@ fun ActorDialog(
                     when (event.key) {
                         Key.DirectionDown -> scope.launch { scroll.animateScrollBy(160f) }
                         Key.DirectionUp -> scope.launch { scroll.animateScrollBy(-160f) }
+                        Key.DirectionCenter, Key.Enter -> if (canSwitch) pick(!showPlex)
                         else -> Unit
                     }
                 }
@@ -272,11 +285,25 @@ fun ActorDialog(
                 )
             }
             Column(Modifier.weight(1f).fillMaxSize().verticalScroll(scroll)) {
-                Text("BIOGRAPHIE", color = Color(0xFF9AA3AD), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (canSwitch) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            "BIOGRAPHIE", color = Color(0xFF9AA3AD), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.CenterVertically),
+                        )
+                        BioSwitch(showPlex, pick)
+                    }
+                } else {
+                    Text("BIOGRAPHIE", color = Color(0xFF9AA3AD), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
                 Text(
                     when {
                         info == null -> "Chargement…"
                         info.bio.isBlank() -> "Biographie indisponible pour cet acteur."
+                        showPlex && canSwitch -> info.altBio
                         else -> info.bio
                     },
                     color = Color(0xFFD5DBE2), fontSize = 14.sp, lineHeight = 20.sp,
@@ -288,10 +315,13 @@ fun ActorDialog(
                         color = Color(0xFF9AA3AD), fontSize = 11.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
                     )
-                    info.works.chunked(6).forEach { line ->
-                        Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            line.forEach { work -> WorkTile(work, posters) }
-                        }
+                    // Vignettes à la suite, qui passent à la ligne selon la largeur de l'écran.
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(bottom = 10.dp, end = 12.dp),
+                    ) {
+                        info.works.forEach { work -> WorkTile(work, posters) }
                     }
                 }
                 Text(
@@ -300,6 +330,34 @@ fun ActorDialog(
                     modifier = Modifier.tap { onClose() }.padding(top = 10.dp, bottom = 10.dp, end = 16.dp),
                 )
             }
+        }
+    }
+}
+
+/** Sélecteur à deux choix « Wikipédia | Plex » : le choix actif est surligné, chaque moitié se touche (≥ 40 dp de haut). */
+@Composable
+private fun BioSwitch(showPlex: Boolean, onPick: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF26303B))
+            .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(20.dp)),
+    ) {
+        listOf(false to "Wikipédia", true to "Plex").forEach { (plex, label) ->
+            val active = plex == showPlex
+            Text(
+                label,
+                color = if (active) Ink else Paper,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .heightIn(min = 40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (active) Accent else Color.Transparent)
+                    .tap { onPick(plex) }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+            )
         }
     }
 }
