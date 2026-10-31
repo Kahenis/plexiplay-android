@@ -159,6 +159,15 @@ class PlexClient(
     fun recentlyAdded(server: ServerEndpoint, sectionKey: String, size: Int = 24): List<Metadata> =
         metadataList(get(sized("${server.uri}/library/sections/$sectionKey/recentlyAdded", size), server.accessToken))
 
+    /**
+     * Derniers ajouts d'une bibliothèque, du plus récent au plus ancien : tri explicite par date d'ajout
+     * (films : type 1 ; séries : épisodes, type 4), puis retrié par `addedAt` au cas où le serveur l'ignore.
+     */
+    fun latestAdded(server: ServerEndpoint, sectionKey: String, isShow: Boolean, size: Int = 24): List<Metadata> =
+        metadataList(
+            get(sized("${server.uri}/library/sections/$sectionKey/all?type=${if (isShow) 4 else 1}&sort=addedAt:desc", size), server.accessToken),
+        ).sortedByDescending { it.addedAt }
+
     fun mostWatched(server: ServerEndpoint, sectionKey: String): List<Metadata> =
         metadataList(get(sized("${server.uri}/library/sections/$sectionKey/all?sort=viewCount:desc"), server.accessToken))
 

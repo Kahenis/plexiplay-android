@@ -62,6 +62,15 @@
 - `ActorDialog` (mobile) : sélecteur « Wikipédia | Plex » (`BioSwitch`) à côté du titre BIOGRAPHIE quand les deux biographies existent ; choix actif surligné, zones de toucher ≥ 40 dp, retour en haut du texte à chaque bascule (OK de la télécommande bascule aussi). Pas d'indications de télécommande.
 - Œuvres de l'acteur : `FlowRow` (passent à la ligne selon la largeur) au lieu de rangées fixes de 6 qui débordaient en portrait.
 
+## 1.5.8 : derniers ajouts de l'accueil dans le bon ordre
+
+- Constat : « Films - Derniers ajouts » et « Séries - Derniers ajouts » mélangés, ordre inversé, derniers films absents. Cause : les 24 derniers de chaque bibliothèque étaient collés bout à bout (sans tri commun) et l'ordre dépendait du point d'accès `recentlyAdded` du serveur, sans date pour vérifier.
+- `Metadata.addedAt` (date d'ajout) est lu. `PlexClient.latestAdded(section, isShow, size)` : `/library/sections/{clé}/all?type=1|4&sort=addedAt:desc` (films, ou épisodes pour les séries), retrié par `addedAt`.
+- Accueil (`loadHome` et `homeRows`) : `latestMovies` fusionne les bibliothèques de films, trie par date, garde 24 ; `latestEpisodes` fusionne les épisodes de toutes les bibliothèques de séries, trie par date puis regroupe par saison (`groupAdditions`, « N ajouts »).
+- Les bibliothèques de vidéos personnelles (`LibrarySection.personal`) ne figurent plus dans « Films - Derniers ajouts » de l'accueil (elles restent dans « Continuer à voir » et dans leur propre page).
+- Rangée « Nouveautés » d'une bibliothèque : même tri par date.
+- La version TV a le même défaut (code identique).
+
 ---
 
 # Notes de développement (Plexiplay clone)

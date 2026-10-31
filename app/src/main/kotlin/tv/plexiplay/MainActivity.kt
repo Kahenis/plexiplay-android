@@ -1080,14 +1080,18 @@ private suspend fun loadHome(
 ): List<Shelf> {
     val movies = sections.filter { it.type == "movie" }
     val shows = sections.filter { it.type == "show" }
+    // Derniers ajouts : sans les vidéos personnelles ; toutes les bibliothèques fusionnées puis triées par date.
     val calls = buildList {
         movies.forEach { section ->
             add { runCatching { client.onDeck(server, section.key) }.getOrDefault(emptyList()) }
-            add { runCatching { client.recentlyAdded(server, section.key) }.getOrDefault(emptyList()) }
+            add {
+                if (section.personal) emptyList()
+                else runCatching { client.latestAdded(server, section.key, false) }.getOrDefault(emptyList())
+            }
         }
         shows.forEach { section ->
             add { runCatching { client.onDeck(server, section.key) }.getOrDefault(emptyList()) }
-            add { runCatching { groupAdditions(client.recentlyAdded(server, section.key, 80)) }.getOrDefault(emptyList()) }
+            add { runCatching { client.latestAdded(server, section.key, true, 80) }.getOrDefault(emptyList()) }
         }
     }
     if (calls.isEmpty()) {
@@ -1106,20 +1110,28 @@ private suspend fun loadHome(
     val movieCalls = movies.size * 2
     return listOf(
         Shelf("Films - Continuer à voir", loaded.filterIndexed { index, _ -> index < movieCalls && index % 2 == 0 }.flatten()),
-        Shelf("Films - Derniers ajouts", loaded.filterIndexed { index, _ -> index < movieCalls && index % 2 == 1 }.flatten()),
+        Shelf("Films - Derniers ajouts", latestMovies(loaded.filterIndexed { index, _ -> index < movieCalls && index % 2 == 1 })),
         Shelf("Séries - Continuer à voir", loaded.filterIndexed { index, _ -> index >= movieCalls && index % 2 == 0 }.flatten().map { seriesPoster(it) }),
-        Shelf("Séries - Derniers ajouts", loaded.filterIndexed { index, _ -> index >= movieCalls && index % 2 == 1 }.flatten().map { seriesPoster(it) }),
+        Shelf("Séries - Derniers ajouts", latestEpisodes(loaded.filterIndexed { index, _ -> index >= movieCalls && index % 2 == 1 }).map { seriesPoster(it) }),
     )
 }
+
+/** Films de toutes les bibliothèques, du plus récent au plus ancien (24 au plus). */
+private fun latestMovies(lists: List<List<Metadata>>): List<Metadata> =
+    lists.flatten().distinctBy { it.ratingKey }.sortedByDescending { it.addedAt }.take(24)
+
+/** Épisodes de toutes les bibliothèques triés par date, puis regroupés par saison (« N ajouts »). */
+private fun latestEpisodes(lists: List<List<Metadata>>): List<Metadata> =
+    groupAdditions(lists.flatten().distinctBy { it.ratingKey }.sortedByDescending { it.addedAt })
 
 private fun homeRows(client: PlexClient, server: ServerEndpoint, sections: List<LibrarySection>): List<Shelf> {
     val movies = sections.filter { it.type == "movie" }
     val shows = sections.filter { it.type == "show" }
     return listOf(
         Shelf("Films - Continuer à voir", movies.flatMap { runCatching { client.onDeck(server, it.key) }.getOrDefault(emptyList()) }),
-        Shelf("Films - Derniers ajouts", movies.flatMap { runCatching { client.recentlyAdded(server, it.key) }.getOrDefault(emptyList()) }),
+        Shelf("Films - Derniers ajouts", latestMovies(movies.filter { !it.personal }.map { runCatching { client.latestAdded(server, it.key, false) }.getOrDefault(emptyList()) })),
         Shelf("Séries - Continuer à voir", shows.flatMap { runCatching { client.onDeck(server, it.key) }.getOrDefault(emptyList()) }.map { seriesPoster(it) }),
-        Shelf("Séries - Derniers ajouts", shows.flatMap { runCatching { groupAdditions(client.recentlyAdded(server, it.key, 80)) }.getOrDefault(emptyList()) }.map { seriesPoster(it) }),
+        Shelf("Séries - Derniers ajouts", latestEpisodes(shows.map { runCatching { client.latestAdded(server, it.key, true, 80) }.getOrDefault(emptyList()) }).map { seriesPoster(it) }),
     )
 }
 
@@ -1190,7 +1202,7 @@ private fun newsRows(client: PlexClient, server: ServerEndpoint, sectionKey: Str
         Shelf(
             "Nouveautés",
             runCatching {
-                if (isShow) groupAdditions(client.recentlyAdded(server, sectionKey, 80)) else client.recentlyAdded(server, sectionKey)
+                if (isShow) groupAdditions(client.latestAdded(server, sectionKey, true, 80)) else client.latestAdded(server, sectionKey, false)
             }.getOrDefault(emptyList()),
         ),
         Shelf("Les plus regardés", runCatching { client.mostWatched(server, sectionKey) }.getOrDefault(emptyList())),

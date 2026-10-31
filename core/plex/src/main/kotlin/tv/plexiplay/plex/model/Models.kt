@@ -114,6 +114,8 @@ data class Metadata(
     val ratingImage: String = "",
     val viewCount: Int = 0,
     val viewOffset: Long = 0,
+    /** Date d'ajout dans la bibliothèque (secondes depuis 1970), pour trier les derniers ajouts. */
+    val addedAt: Long = 0,
     val index: Int = 0,
     val parentIndex: Int = 0,
     val leafCount: Int = 0,
