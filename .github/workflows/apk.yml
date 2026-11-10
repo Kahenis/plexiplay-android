@@ -2,7 +2,13 @@ name: apk
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   debug:
     runs-on: ubuntu-latest
