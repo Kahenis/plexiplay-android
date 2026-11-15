@@ -60,24 +60,20 @@ object VotesClient {
         return digest.joinToString("") { "%02x".format(it) }.take(32)
     }
 
-    /** Au-delà de ce nombre, les lettres cachées d'un mot ne sont plus comptées point par point (nom très long). */
-    private const val MAX_HIDDEN_DOTS = 12
+    /** Points ajoutés après les 3 lettres visibles de chaque mot : toujours le même nombre, pour ne pas révéler la longueur. */
+    private const val HIDDEN_DOTS = 3
 
     /**
      * Texte affiché à côté d'un avis à partir du nom déchiffré du compte Plex : les 3 premières lettres de
-     * chaque mot (prénom, puis nom), suivies d'un point « • » par lettre restante de ce mot, pour qu'on voie
-     * tout de suite que c'est un début tronqué et non un code comme « N/A ». Calculé ici, au moment de
+     * chaque mot (prénom, puis nom), suivies de toujours 3 points « • », quelle que soit la longueur réelle du mot
+     * (choix de Jeff, 1.6.6 : un point par lettre cachée laissait deviner la longueur). Calculé ici, au moment de
      * l'affichage — jamais stocké tel quel, pour pouvoir changer ce format sans toucher au serveur.
-     * Ex. « Jeff Guilard » → « JEF• GUI•••• », « Nazgul » → « NAZ••• ».
+     * Ex. « Jeff Guilard » → « JEF••• GUI••• », « Lou » → « LOU••• ».
      */
     fun maskedName(name: String): String {
         val words = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
         if (words.isEmpty()) return ""
-        return words.joinToString(" ") { word ->
-            val visible = word.take(3).uppercase()
-            val hidden = (word.length - 3).coerceIn(0, MAX_HIDDEN_DOTS)
-            visible + "•".repeat(hidden)
-        }
+        return words.joinToString(" ") { word -> word.take(3).uppercase() + "•".repeat(HIDDEN_DOTS) }
     }
 
     /** Clé AES dérivée de APP_KEY : ni plus ni moins secrète que APP_KEY lui-même (dans l'APK, public). */

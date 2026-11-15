@@ -384,7 +384,7 @@ private fun ReviewCard(entry: Review) {
     }
 }
 
-/** Colore un nom masqué (ex. « JEF• GUI•••• ») : lettres en accent, points « • » en gris discret. */
+/** Colore un nom masqué (ex. « JEF••• GUI••• ») : lettres en accent, points « • » en gris discret. */
 private fun maskedLabel(masked: String) = buildAnnotatedString {
     for (char in masked) {
         withStyle(SpanStyle(color = if (char == '•') Color(0xFF5A6572) else Accent)) {

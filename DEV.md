@@ -119,6 +119,10 @@
 - Bibliothèques : l'interrupteur « Sagas » n'est plus posé à côté de l'heure (il recouvrait les onglets). `ShellScreen` reçoit `sagaSwitch` et le place au bout de la rangée d'onglets ; la rangée laisse 84 dp libres à droite pour l'heure (`ClockChip`, seule en haut à droite).
 - Orientation : `appOrientation(context)` (`Orientation.kt`) : téléphone classique (plus petite dimension < 600 dp, sans capteur de charnière `android.hardware.sensor.hinge_angle`) → `SENSOR_LANDSCAPE` pour toute l'appli ; pliant (ouvert ou fermé) et tablette → rotation libre. Appliqué dans `MainActivity.onCreate` et au retour du lecteur (`ImmersiveLandscape`, qui remettait toujours la rotation libre).
 
+## 1.6.6 : nom masqué des avis, toujours 3 points
+
+- `VotesClient.maskedName` : 3 premières lettres de chaque mot (prénom, nom) suivies de toujours 3 points « • » (`HIDDEN_DOTS`), au lieu d'un point par lettre cachée qui laissait deviner la longueur (choix de Jeff). « Jeff Guilard » → « JEF••• GUI••• ». Masquage fait à l'affichage : pas de changement serveur, les avis existants suivent. La TV (1.9.2.9) garde l'ancien format tant qu'elle n'est pas modifiée.
+
 ---
 
 # Notes de développement (Plexiplay clone)
