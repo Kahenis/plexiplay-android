@@ -7,6 +7,9 @@ import tv.plexiplay.player.PlaybackSettings
 private fun videoStream(media: MediaInfo?): StreamInfo? =
     media?.Part?.firstOrNull()?.Stream?.firstOrNull { it.streamType == 1 }
 
+/** Film en Dolby Vision d'après les détails donnés par Plex. */
+internal fun isDolbyVision(media: MediaInfo?): Boolean = videoStream(media)?.DOVIPresent == true
+
 /** Image 10 bits ou HDR (HDR10, HLG, Dolby Vision, couleurs BT.2020) d'après les détails donnés par Plex. */
 internal fun isHdrOrTenBit(media: MediaInfo?): Boolean {
     val stream = videoStream(media)

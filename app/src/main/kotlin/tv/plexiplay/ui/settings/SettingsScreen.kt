@@ -88,8 +88,6 @@ fun SettingsScreen(
     onPrerollVolume: (Int) -> Unit = {},
     inviteStatus: String = "",
     onCheckInvites: () -> Unit = {},
-    prerollTexture: Boolean = false,
-    onPrerollTexture: (Boolean) -> Unit = {},
 ) {
     var volumeOpen by remember { mutableStateOf(false) }
     var prerollOpen by remember { mutableStateOf(false) }
@@ -170,8 +168,8 @@ fun SettingsScreen(
                         Text(
                             "ExoPlayer est léger, mais il transcode certains codecs (délai avant la lecture). mpv est plus lourd, mais il les lit directement (lecture immédiate). ExoPlayer est en général suffisant.",
                             color = Color(0xFF9AA3AD),
-                            fontSize = 10.5.sp,
-                            lineHeight = 12.5.sp,
+                            fontSize = 12.sp,
+                            lineHeight = 14.sp,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -205,13 +203,34 @@ fun SettingsScreen(
                     Text(
                         "Codecs intégrés à l'appareil : " + tv.plexiplay.player.DeviceCodecs.summary(),
                         color = Color(0xFF9AA3AD),
-                        fontSize = 10.5.sp,
+                        fontSize = 12.sp,
                     )
                     if (settings.player != PlayerKind.MPV) {
                         Hinted("Corrige l'image étirée sur certains écrans. Désactivez-la si l'image est déjà correcte.") {
                             Cycle("Correction du format", if (settings.formatFix) "Activée" else "Désactivée", listOf("Activée", "Désactivée")) {
                                 onChange(settings.copy(formatFix = it == "Activée"))
                             }
+                        }
+                    }
+                }
+            }
+            // Mobile : pas de cadre « TV Philips et équivalent » (Correctif Dolby Vision propre aux TV).
+            item {
+                Group("INTROS ET GÉNÉRIQUES") {
+                    Text(
+                        "Fonctionne quand le serveur Plex a repéré l'intro ou le générique de fin (Plex le fait lui-même, en général avec Plex Pass). Sinon, rien ne s'affiche.",
+                        color = Color(0xFF9AA3AD),
+                        fontSize = 12.sp,
+                        lineHeight = 14.sp,
+                    )
+                    Hinted("Actif : l'intro d'un épisode est sautée toute seule dès qu'elle commence. Inactif : un bouton « Passer l'intro » apparaît, à vous d'appuyer sur OK.") {
+                        Cycle("Toujours passer les intros", if (settings.skipIntro) "Actif" else "Inactif", listOf("Actif", "Inactif")) {
+                            onChange(settings.copy(skipIntro = it == "Actif"))
+                        }
+                    }
+                    Hinted("Actif : le générique de fin d'un épisode est sauté tout seul, pour passer au suivant. Inactif : un bouton « Passer le générique » apparaît. Pour un film, le bouton existe, mais il n'y a pas de saut automatique.") {
+                        Cycle("Toujours passer les génériques", if (settings.skipCredits) "Actif" else "Inactif", listOf("Actif", "Inactif")) {
+                            onChange(settings.copy(skipCredits = it == "Actif"))
                         }
                     }
                 }

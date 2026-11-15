@@ -96,6 +96,10 @@ data class ClipPlay(
     val audioCodec: String = "",
     val startMs: Long = 0L,
     val sourceAspect: Float = 0f,
+    // Cadence du fichier (images par seconde, d'après Plex) : sert à « Adapter la fréquence d'image » ; 0 si inconnue.
+    val frameRate: Float = 0f,
+    // Film en Dolby Vision d'après Plex : sert à « Dolby Vision sans saut d'image ».
+    val dolbyVision: Boolean = false,
     /** Film ou vidéo personnelle (pas un épisode) : l'écran de lecture se ferme à la fin. */
     val closeOnEnd: Boolean = false,
     /** Flux converti par le serveur avec la piste française (bouton FR), piste et partie à enregistrer. */
@@ -133,6 +137,8 @@ fun PlayerScreen(
     prerollVolume: Float = 0.75f,
     // Prérolls dans une vue TextureView (réglage « Prérolls en TextureView ») ; sinon affichage habituel comme avant la 1.8.2.
     prerollTexture: Boolean = false,
+    // « Adapter la fréquence d'image » (cadre TV Philips et équivalent) : l'écran passe à la fréquence du film pendant la lecture.
+    frameMatch: Boolean = false,
     onProgress: (ratingKey: String, state: String, position: Long, duration: Long) -> Unit,
     onExit: () -> Unit,
     onRegisterBack: ((() -> Boolean)?) -> Unit = {},
@@ -150,9 +156,15 @@ fun PlayerScreen(
     // Changement de piste sur un flux converti : relance complète du film comme depuis la page de présentation
     // (clip, piste audio, sous-titre, position, adresse du flux en cours). Renvoie vrai si l'appli a relancé le film.
     onReload: suspend (ClipPlay, Int, Int, Long, String) -> Boolean = { _, _, _, _, _ -> false },
+    // Fiche du titre (appui court sur « i ») : demandée au serveur à partir de la clé du film ou de l'épisode.
+    titleInfo: suspend (String) -> TitleInfo? = { null },
+    // Intro et générique : repères du serveur (par film ou épisode) et saut automatique (réglages).
+    skipMarkers: suspend (String) -> List<SkipMarker> = { emptyList() },
+    autoSkipIntro: Boolean = false,
+    autoSkipCredits: Boolean = false,
 ) {
     if (playerKind == PlayerKind.MPV) {
-        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume, onCompat = onCompat, onPrerollStarted = onPrerollStarted, onPrerollError = onPrerollError)
+        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume, onCompat = onCompat, onPrerollStarted = onPrerollStarted, onPrerollError = onPrerollError, titleInfo = titleInfo, skipMarkers = skipMarkers, autoSkipIntro = autoSkipIntro, autoSkipCredits = autoSkipCredits)
         return
     }
     var infoVisible by remember { mutableStateOf(false) }
@@ -160,6 +172,9 @@ fun PlayerScreen(
     var infoPage by remember { mutableStateOf(0) }
     val fpsMark = remember { longArrayOf(0L, 0L) }
     val fpsValue = remember { floatArrayOf(0f) }
+    // Images « sautées » par le lecteur : moment (horloge de la TV) et nombre à chaque saut, pour mesurer le rythme des sauts.
+    val skipEvents = remember { mutableListOf<Pair<Long, Int>>() }
+    var audioUnderruns by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf(clips.firstOrNull()?.label ?: "") }
     var notice by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<PendingChange?>(null) }
@@ -668,6 +683,16 @@ fun PlayerScreen(
         val video = player.videoFormat
         lines += "Cadence" to "affichée %.1f i/s".format(fpsValue[0]) + (if (video != null && video.frameRate > 0f) " · fichier %.2f i/s".format(video.frameRate) else "")
         lines += "Images" to "perdues ${counters?.droppedBufferCount ?: 0} · sautées ${counters?.skippedOutputBufferCount ?: 0} · max de suite ${counters?.maxConsecutiveDroppedBufferCount ?: 0}"
+        // Rythme des images sautées : un saut toutes les ~16 s = écart d'horloge de l'écran ; irrégulier = décodeur ; avec coupures du son = son.
+        val skipTotal = skipEvents.sumOf { it.second }
+        val skipText = if (skipEvents.isEmpty()) "aucun" else {
+            val times = skipEvents.map { it.first }
+            val gaps = times.zipWithNext { a, b -> (b - a) / 1000f }
+            "$skipTotal en ${skipEvents.size} fois" +
+                (if (gaps.isNotEmpty()) " · écart moyen %.1f s".format(gaps.average()) else "") +
+                " · dernier il y a ${(android.os.SystemClock.elapsedRealtime() - times.last()) / 1000L} s"
+        }
+        lines += "Sauts" to "$skipText · son : $audioUnderruns coupure(s)"
         lines += "Flux image" to (video?.let { "${codecLabel(it.sampleMimeType)} ${it.width}×${it.height} · " + (if (it.bitrate > 0) "%.1f Mbit/s".format(it.bitrate / 1_000_000f) else "débit ?") } ?: "?")
         lines += "Réseau" to "${rateLabel(bitsPerSecond)} · tampon ${player.totalBufferedDuration / 1000} s · coupures $rebuffers"
         lines += "Décodeur" to decoderKind(decoderName)
@@ -843,6 +868,15 @@ fun PlayerScreen(
                 audioPassthrough = !androidx.media3.common.util.Util.isEncodingLinearPcm(audioTrackConfig.encoding)
             }
 
+            override fun onAudioUnderrun(
+                eventTime: AnalyticsListener.EventTime,
+                bufferSize: Int,
+                bufferSizeMs: Long,
+                elapsedSinceLastFeedMs: Long,
+            ) {
+                audioUnderruns += 1
+            }
+
             override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
                 if (state == Player.STATE_READY) wasReady = true
                 if (state == Player.STATE_BUFFERING && wasReady) {
@@ -862,6 +896,39 @@ fun PlayerScreen(
             player.release()
         }
     }
+    // Mesure des images sautées (Diagnostic) : surveille le compteur du décodeur et note le moment de chaque saut.
+    LaunchedEffect(player) {
+        var last = 0
+        while (true) {
+            delay(250)
+            val counters = player.videoDecoderCounters ?: continue
+            counters.ensureUpdated()
+            val total = counters.skippedOutputBufferCount
+            if (total > last) {
+                skipEvents.add(android.os.SystemClock.elapsedRealtime() to (total - last))
+                if (skipEvents.size > 60) skipEvents.removeAt(0)
+            }
+            last = total
+        }
+    }
+    // « Adapter la fréquence d'image » : au lancement du film, demande à la TV le mode d'écran de même fréquence ; rendu à la sortie.
+    LaunchedEffect(currentItem.value, frameMatch) {
+        if (!frameMatch || playerKind == PlayerKind.MPV) {
+            FrameRate.note = "réglage non activé"
+            return@LaunchedEffect
+        }
+        val clip = clips.getOrNull(currentItem.value)
+        if (clip?.kind != ClipKind.FEATURE) return@LaunchedEffect
+        var fps = clip.frameRate
+        var waited = 0
+        while (fps <= 0f && waited < 2000) {
+            delay(200)
+            waited += 200
+            fps = player.videoFormat?.frameRate?.takeIf { it > 0f } ?: 0f
+        }
+        FrameRate.apply(context, fps)
+    }
+    DisposableEffect(Unit) { onDispose { FrameRate.restore(context) } }
     DisposableEffect(Unit) {
         onRegisterBack {
             if (shown.value) {
@@ -1025,6 +1092,83 @@ fun PlayerScreen(
         notice = ""
     }
 
+    // Fiche du titre (appui court sur « i ») : demandée au serveur, gardée en mémoire pour la suite.
+    var titleCard by remember { mutableStateOf<TitleInfo?>(null) }
+    val cardCache = remember { mutableMapOf<String, TitleInfo>() }
+    var nowPlaying by remember { mutableStateOf("") }
+    fun nowPlayingText(): String {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index)
+        val video = player.videoFormat
+        val audio = player.audioFormat
+        val sid = if (clip == null) 0 else subId(index, clip)
+        val choice = clip?.subs?.firstOrNull { it.id == sid }
+        val subtitles = if (sid <= 0 || choice == null) "" else listOf(languageName(choice.language).ifBlank { choice.label }, if (choice.forced) "forcés" else "").filter { it.isNotBlank() }.joinToString(" ")
+        return nowPlayingLine(
+            video?.width ?: 0, video?.height ?: 0,
+            audio?.sampleMimeType.orEmpty(), audio?.channelCount ?: 0,
+            selectedAudioLanguage().ifBlank { audio?.language.orEmpty() },
+            subtitles,
+        )
+    }
+    LaunchedEffect(titleCard != null) {
+        while (titleCard != null) {
+            nowPlaying = nowPlayingText()
+            // Le film ou l'épisode a changé depuis l'ouverture de la fiche : elle n'est plus la bonne.
+            val shownKey = titleCard?.key
+            val now = player.currentMediaItemIndex
+            val expected = clips.drop(now).firstOrNull { it.kind == ClipKind.FEATURE }?.ratingKey ?: clips.getOrNull(now)?.ratingKey
+            if (shownKey != null && expected != null && shownKey != expected) titleCard = null
+            delay(700)
+        }
+    }
+    // Intro et générique : repères du serveur Plex, bouton « Passer… » et saut automatique (réglages).
+    val skipState = remember { SkipState() }
+    var activeSkip by remember { mutableStateOf<SkipMarker?>(null) }
+    fun skipNow(marker: SkipMarker) {
+        val duration = player.duration.coerceAtLeast(0L)
+        player.seekTo(skipTarget(marker, duration))
+        notice = marker.doneNotice
+        activeSkip = null
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val clip = clips.getOrNull(player.currentMediaItemIndex)
+            if (clip != null && clip.kind == ClipKind.FEATURE) {
+                val key = clip.ratingKey
+                if (skipState.requested.add(key)) {
+                    scope.launch { skipState.markers[key] = runCatching { skipMarkers(key) }.getOrDefault(emptyList()) }
+                }
+                val found = activeMarker(skipState.markers[key].orEmpty(), player.currentPosition)
+                val auto = found != null && ((found.kind == "intro" && autoSkipIntro) || (found.kind == "credits" && autoSkipCredits && !clip.closeOnEnd))
+                if (found != null && auto && skipState.autoDone.add("$key:${found.kind}:${found.startMs}")) {
+                    skipNow(found)
+                } else {
+                    activeSkip = found
+                }
+            } else {
+                activeSkip = null
+            }
+            delay(500)
+        }
+    }
+    fun showTitleCard(current: Int) {
+        val target = clips.drop(current).firstOrNull { it.kind == ClipKind.FEATURE } ?: clips.getOrNull(current) ?: return
+        infoVisible = false
+        val cached = cardCache[target.ratingKey]
+        if (cached != null) {
+            titleCard = cached
+            return
+        }
+        val key = target.ratingKey
+        titleCard = TitleInfo(key, target.label, summary = "Chargement…")
+        scope.launch {
+            val loaded = runCatching { titleInfo(key) }.getOrNull()
+            if (loaded != null) cardCache[key] = loaded
+            if (titleCard?.key == key) titleCard = loaded ?: TitleInfo(key, target.label)
+        }
+    }
+
     fun reveal() {
         shown.value = true
         pulse += 1
@@ -1091,7 +1235,12 @@ fun PlayerScreen(
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (!shown.value) {
-                            reveal()
+                            val skip = activeSkip
+                            if (skip != null) {
+                                skipNow(skip)
+                            } else {
+                                reveal()
+                            }
                             swallowOkUp = true
                             true
                         } else {
@@ -1306,6 +1455,8 @@ fun PlayerScreen(
                 },
             )
         }
+        titleCard?.let { TitleInfoPanel(it, nowPlaying, Modifier.align(Alignment.TopStart)) }
+        activeSkip?.takeIf { !audioMenu && !subMenu }?.let { SkipButton(it, shown.value, Modifier.align(Alignment.BottomEnd)) { skipNow(it) } }
         if (infoVisible && aspectNote.isNotEmpty()) {
             Text(
                 aspectNote,
@@ -1369,15 +1520,25 @@ fun PlayerScreen(
                         }
                     }
                     PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }, label = audioTag) { forceFrench(); reveal() }
-                    PlayerIcon(Glyph.Info) {
-                        if (!infoVisible) {
-                            infoVisible = true
-                            infoPage = 0
-                        } else if (infoPage == 0) {
-                            infoPage = 1
-                        } else {
-                            infoVisible = false
-                        }
+                    PlayerIcon(
+                        Glyph.Info,
+                        onLongPress = {
+                            // Appui de 3 secondes : données techniques (lecture, puis diagnostic, puis fermeture).
+                            titleCard = null
+                            if (!infoVisible) {
+                                infoVisible = true
+                                infoPage = 0
+                            } else if (infoPage == 0) {
+                                infoPage = 1
+                            } else {
+                                infoVisible = false
+                            }
+                            reveal()
+                        },
+                        longPressMs = 3000L,
+                    ) {
+                        // Appui court : fiche du film ou de l'épisode.
+                        if (titleCard != null) titleCard = null else showTitleCard(player.currentMediaItemIndex)
                         reveal()
                     }
                     PlayerIcon(Glyph.Skip) {
@@ -1392,15 +1553,15 @@ fun PlayerScreen(
 }
 
 @Composable
-internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongPress: (() -> Unit)? = null, label: String? = null, onClick: () -> Unit) {
+internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongPress: (() -> Unit)? = null, label: String? = null, longPressMs: Long = 2000L, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     var pressing by remember { mutableStateOf(false) }
     var fired by remember { mutableStateOf(false) }
     if (onLongPress != null) {
-        // Appui maintenu 2 secondes : action longue ; appui bref : action normale au relâchement.
+        // Appui maintenu (2 secondes, 3 pour « i ») : action longue ; appui bref : action normale au relâchement.
         LaunchedEffect(pressing) {
             if (pressing) {
-                delay(2000)
+                delay(longPressMs)
                 fired = true
                 pressing = false
                 onLongPress()

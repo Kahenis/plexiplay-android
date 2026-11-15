@@ -17,6 +17,8 @@ import okio.Buffer
 import tv.plexiplay.plex.model.DirectoryBox
 import tv.plexiplay.plex.model.GenreBox
 import tv.plexiplay.plex.model.GenreEntry
+import tv.plexiplay.plex.model.HubBox
+import tv.plexiplay.plex.model.HubEntry
 import tv.plexiplay.plex.model.LibrarySection
 import tv.plexiplay.plex.model.Metadata
 import tv.plexiplay.plex.model.MetadataBox
@@ -80,7 +82,7 @@ class PlexClient(
             .header("Accept", "application/xml")
             .build()
         val raw = http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Plex ${response.code}")
+            if (!response.isSuccessful) throw PlexHttpException(response.code)
             response.body?.string().orEmpty()
         }
         fun unescape(v: String) = v.replace("&quot;", "\"").replace("&apos;", "'").replace("&lt;", "<")
@@ -113,7 +115,7 @@ class PlexClient(
             .let { PlexHeaders.apply(it, clientId, token, deviceName) }
             .build()
         http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Plex ${response.code}")
+            if (!response.isSuccessful) throw PlexHttpException(response.code)
         }
     }
 
@@ -178,14 +180,19 @@ class PlexClient(
     fun recentlyAdded(server: ServerEndpoint, sectionKey: String, size: Int = 24): List<Metadata> =
         metadataList(get(sized("${server.uri}/library/sections/$sectionKey/recentlyAdded", size), server.accessToken))
 
-    /**
-     * Derniers ajouts d'une bibliothèque, du plus récent au plus ancien : tri explicite par date d'ajout
-     * (films : type 1 ; séries : épisodes, type 4), puis retrié par `addedAt` au cas où le serveur l'ignore.
-     */
-    fun latestAdded(server: ServerEndpoint, sectionKey: String, isShow: Boolean, size: Int = 24): List<Metadata> =
-        metadataList(
-            get(sized("${server.uri}/library/sections/$sectionKey/all?type=${if (isShow) 4 else 1}&sort=addedAt:desc", size), server.accessToken),
-        ).sortedByDescending { it.addedAt }
+    /** Rayons d'une bibliothèque tels que le serveur les classe (continuer à voir, derniers ajouts…). */
+    fun sectionHubs(server: ServerEndpoint, sectionKey: String, count: Int = 24): List<HubEntry> =
+        json.decodeFromString(
+            Wrapped.serializer(HubBox.serializer()),
+            get("${server.uri}/hubs/sections/$sectionKey?count=$count", server.accessToken),
+        ).MediaContainer?.Hub.orEmpty()
+
+    /** Réglage « Gérer les recommandations » du serveur : quels rayons de la bibliothèque vont sur l'accueil. */
+    fun homeHubs(server: ServerEndpoint, sectionKey: String): List<HubEntry> =
+        json.decodeFromString(
+            Wrapped.serializer(HubBox.serializer()),
+            get("${server.uri}/hubs/sections/$sectionKey/manage", server.accessToken),
+        ).MediaContainer?.Hub.orEmpty()
 
     fun mostWatched(server: ServerEndpoint, sectionKey: String): List<Metadata> =
         metadataList(get(sized("${server.uri}/library/sections/$sectionKey/all?sort=viewCount:desc"), server.accessToken))
@@ -254,8 +261,8 @@ class PlexClient(
         return metadataList(raw)
     }
 
-    fun metadata(server: ServerEndpoint, ratingKey: String): Metadata? {
-        val raw = get("${server.uri}/library/metadata/$ratingKey", server.accessToken, language = "fr")
+    fun metadata(server: ServerEndpoint, ratingKey: String, markers: Boolean = false): Metadata? {
+        val raw = get("${server.uri}/library/metadata/$ratingKey" + if (markers) "?includeMarkers=1" else "", server.accessToken, language = "fr")
         return metadataList(raw).firstOrNull()
     }
 
@@ -381,7 +388,7 @@ class PlexClient(
                     .header("Accept-Language", "fr-FR,fr;q=0.9")
                     .build()
                 val raw = quick.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("Plex ${response.code}")
+                    if (!response.isSuccessful) throw PlexHttpException(response.code)
                     response.body?.string().orEmpty()
                 }
                 val container = json.parseToJsonElement(raw).jsonObject["MediaContainer"]?.jsonObject
@@ -554,7 +561,7 @@ class PlexClient(
             }
             .build()
         http.newCall(request).execute().use { response ->
-            val body = response.body ?: throw IOException("Plex ${response.code}")
+            val body = response.body ?: throw PlexHttpException(response.code)
             val total = body.contentLength()
             val source = body.source()
             val buffer = Buffer()
@@ -566,11 +573,14 @@ class PlexClient(
                 runCatching { onBytes?.invoke(read, total) }
             }
             val raw = buffer.readUtf8()
-            if (!response.isSuccessful) throw IOException("Plex ${response.code}")
+            if (!response.isSuccessful) throw PlexHttpException(response.code)
             return raw
         }
     }
 }
+
+/** Réponse d'erreur de Plex ou du serveur : 401 = session ou jeton refusé. Le message reste « Plex <code> ». */
+class PlexHttpException(val code: Int) : IOException("Plex $code")
 
 data class PlexInvite(
     val id: String,

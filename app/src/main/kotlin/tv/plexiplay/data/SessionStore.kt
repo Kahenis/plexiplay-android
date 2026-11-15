@@ -79,6 +79,9 @@ class SessionStore(context: Context) {
         audioBoost = prefs.getInt("audio_boost", 100),
         convertTitles = prefs.getStringSet("convert_titles", emptySet()).orEmpty().toSet(),
         boxFullHd = prefs.getBoolean("box_fullhd", false),
+        dvNoSkip = prefs.getBoolean("dv_no_skip", false),
+        skipIntro = prefs.getBoolean("skip_intro", false),
+        skipCredits = prefs.getBoolean("skip_credits", false),
         prerollMode = if (prefs.getBoolean("preroll_locked", false)) "random" else prefs.getString("preroll_mode", "sequential") ?: "sequential",
         prerollLocked = prefs.getBoolean("preroll_locked", false),
         formatFix = prefs.getBoolean(KEY_FORMAT_FIX, true),
@@ -174,13 +177,6 @@ class SessionStore(context: Context) {
         prefs.edit().putInt("preroll_volume", value.coerceIn(20, 100)).apply()
     }
 
-    /** Prérolls affichés dans une vue TextureView (anciennes TV, TV Philips) : non par défaut (affichage habituel). */
-    fun prerollTexture(): Boolean = prefs.getBoolean("preroll_texture", false)
-
-    fun savePrerollTexture(value: Boolean) {
-        prefs.edit().putBoolean("preroll_texture", value).apply()
-    }
-
     /** Interrupteur « Sagas » des bibliothèques de films : affiche de la saga à la place de ses films (éteint par défaut). */
     fun sagaMode(): Boolean = prefs.getBoolean("saga_mode", false)
 
@@ -208,6 +204,12 @@ class SessionStore(context: Context) {
             .putBoolean(KEY_FORMAT_FIX, settings.formatFix)
             .putInt("audio_boost", settings.audioBoost)
             .putBoolean("box_fullhd", settings.boxFullHd)
+            .putBoolean("dv_no_skip", settings.dvNoSkip)
+            .putBoolean("skip_intro", settings.skipIntro)
+            .putBoolean("skip_credits", settings.skipCredits)
+            .remove("decode_trial")
+            .remove("preroll_texture")
+            .remove("frame_match")
             .putString("preroll_mode", settings.prerollMode)
             .putBoolean("preroll_locked", settings.prerollLocked)
             .apply()

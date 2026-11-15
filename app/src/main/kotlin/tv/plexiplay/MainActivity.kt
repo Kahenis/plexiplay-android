@@ -37,7 +37,9 @@ import tv.plexiplay.player.PlaybackSettings
 import tv.plexiplay.player.PlayerKind
 import tv.plexiplay.player.StreamUrlFactory
 import tv.plexiplay.plex.PlexClient
+import tv.plexiplay.plex.PlexHttpException
 import tv.plexiplay.plex.auth.PinAuthClient
+import tv.plexiplay.plex.model.HubEntry
 import tv.plexiplay.plex.model.LibrarySection
 import tv.plexiplay.plex.model.Metadata
 import tv.plexiplay.plex.model.ServerEndpoint
@@ -51,6 +53,9 @@ import tv.plexiplay.ui.player.AudioChoice
 import tv.plexiplay.ui.player.SubChoice
 import tv.plexiplay.ui.player.ClipPlay
 import tv.plexiplay.ui.player.PlayerScreen
+import tv.plexiplay.ui.player.SkipMarker
+import tv.plexiplay.ui.player.titleInfoOf
+import tv.plexiplay.ui.player.fileFrameRate
 import tv.plexiplay.ui.settings.SettingsScreen
 import tv.plexiplay.ui.shell.LibraryPane
 import tv.plexiplay.ui.shell.PosterStore
@@ -141,7 +146,6 @@ private fun App(
     }
     var themeVolume by remember { mutableIntStateOf(store.themeVolume()) }
     var prerollVolume by remember { mutableIntStateOf(store.prerollVolume()) }
-    var prerollTexture by remember { mutableStateOf(store.prerollTexture()) }
     var sagas by remember { mutableStateOf(store.sagaMode()) }
     var movieTotal by remember { mutableIntStateOf(-1) }
     var prerollPauseUntil by remember { mutableStateOf(store.prerollPauseUntil()) }
@@ -191,6 +195,10 @@ private fun App(
     var offer by remember { mutableStateOf<UpdateOffer?>(null) }
     var startupOffer by remember { mutableStateOf<UpdateOffer?>(null) }
     var startupChecked by remember { mutableStateOf(false) }
+    // Chargement de l'accueil impossible : message simple + « Réessayer » ; session refusée par Plex : retour à la connexion.
+    var loadFailure by remember { mutableStateOf<String?>(null) }
+    var reloadTick by remember { mutableIntStateOf(0) }
+    var sessionNotice by remember { mutableStateOf("") }
     var inviteStatus by remember { mutableStateOf("") }
     var pendingInvites by remember { mutableStateOf<List<tv.plexiplay.plex.PlexInvite>?>(null) }
     var inviteBusy by remember { mutableStateOf(false) }
@@ -300,7 +308,7 @@ private fun App(
     }
 
     val main = remember { Handler(Looper.getMainLooper()) }
-    LaunchedEffect(token) {
+    LaunchedEffect(token, reloadTick) {
         val current = token
         if (current.isNullOrBlank()) {
             ready = true
@@ -341,6 +349,7 @@ private fun App(
             val active = found.firstOrNull()
             if (active == null) {
                 status = "Aucun serveur"
+                loadFailure = "Aucun serveur Plex n'a été trouvé sur votre compte. Vérifiez qu'il est allumé et connecté à Internet, puis réessayez."
                 return@LaunchedEffect
             }
             val loaded = stage(client, 0.28f, 0.42f, ::push) { client.sections(active) }
@@ -355,7 +364,16 @@ private fun App(
             status = if (loaded.isEmpty()) "Aucune bibliothèque disponible sur ${active.name}" else "Accueil"
             push(1f)
         } catch (error: Exception) {
-            status = error.message ?: "Serveur inaccessible"
+            if (error is PlexHttpException && (error.code == 401 || error.code == 403)) {
+                // Plex ne reconnaît plus cette session : on repart de l'écran de connexion.
+                store.clearSession()
+                servers = emptyList()
+                sessionNotice = "Votre session Plex a expiré. Veuillez vous reconnecter."
+                token = null
+            } else {
+                status = error.message ?: "Serveur inaccessible"
+                loadFailure = friendlyLoadError(error)
+            }
         } finally {
             client.onBytes = null
             progress = 1f
@@ -378,8 +396,30 @@ private fun App(
         return
     }
 
+    val failure = loadFailure
+    if (!token.isNullOrBlank() && failure != null) {
+        tv.plexiplay.ui.boot.RetryScreen(
+            message = failure,
+            onRetry = {
+                loadFailure = null
+                progress = 0.04f
+                ready = false
+                reloadTick += 1
+            },
+            onSignIn = {
+                loadFailure = null
+                store.clearSession()
+                servers = emptyList()
+                token = null
+            },
+        )
+        return
+    }
+
     if (token.isNullOrBlank()) {
-        LoginScreen(auth) { received ->
+        LoginScreen(auth, sessionNotice) { received ->
+            sessionNotice = ""
+            loadFailure = null
             store.saveToken(received)
             progress = 0.04f
             ready = false
@@ -719,11 +759,6 @@ private fun App(
                         stack = emptyList()
                     },
                     onSignOut = { confirm = "signout" },
-                    prerollTexture = prerollTexture,
-                    onPrerollTexture = {
-                        prerollTexture = it
-                        store.savePrerollTexture(it)
-                    },
                     inviteStatus = inviteStatus,
                     onCheckInvites = {
                         val current = token
@@ -935,7 +970,6 @@ private fun App(
             engine = settings.engine,
             playerKind = settings.player,
             prerollVolume = prerollVolume / 100f,
-            prerollTexture = prerollTexture,
             onProgress = { key, state, position, duration ->
                 // Enchaînement sans fin des épisodes : pendant le dernier de la file, la suite est préparée ;
                 // à la fin de cet épisode, une nouvelle file prend le relais.
@@ -982,6 +1016,22 @@ private fun App(
                 }
             },
             onExit = { clips = null },
+            autoSkipIntro = settings.skipIntro,
+            autoSkipCredits = settings.skipCredits,
+            skipMarkers = { key ->
+                val active = server
+                if (active == null) emptyList() else withContext(Dispatchers.IO) {
+                    runCatching {
+                        client.metadata(active, key, markers = true)?.Marker.orEmpty()
+                            .filter { (it.type == "intro" || it.type == "credits") && it.endTimeOffset > it.startTimeOffset }
+                            .map { SkipMarker(it.type, it.startTimeOffset, it.endTimeOffset) }
+                    }.getOrDefault(emptyList())
+                }
+            },
+            titleInfo = { key ->
+                val active = server
+                if (active == null) null else withContext(Dispatchers.IO) { runCatching { titleInfoOf(client, active, key) }.getOrNull() }
+            },
             onSubtitleChosen = { clip, id ->
                 val active = server
                 if (active != null) withContext(Dispatchers.IO) { runCatching { client.setSubtitleStream(active, clip.partId, id) } }
@@ -1042,7 +1092,8 @@ private fun App(
             onRegisterBack = { playerBack.value = it },
             mpvMode = settings.mpvMode,
             formatFix = settings.formatFix,
-            compat = settings.compat || (clips?.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE }?.ratingKey in settings.compatTitles),
+            compat = settings.compat || (clips?.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE }?.ratingKey in settings.compatTitles) ||
+                (settings.dvNoSkip && clips?.any { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE && it.dolbyVision } == true),
             onPrerollStarted = { clip -> if (clip.prerollFile.isNotBlank()) store.setPrerollLast(clip.prerollFile) },
             onPrerollError = { clip, fileFault -> if (fileFault && clip.prerollKey.isNotBlank()) store.addPrerollBad(clip.prerollKey) },
             onCompat = {
@@ -1334,61 +1385,79 @@ private suspend fun loadHome(
     end: Float,
     publish: (Float) -> Unit,
 ): List<Shelf> {
-    val movies = sections.filter { it.type == "movie" }
-    val shows = sections.filter { it.type == "show" }
-    // Derniers ajouts : sans les vidéos personnelles ; toutes les bibliothèques fusionnées puis triées par date.
-    val calls = buildList {
-        movies.forEach { section ->
-            add { runCatching { client.onDeck(server, section.key) }.getOrDefault(emptyList()) }
-            add {
-                if (section.personal) emptyList()
-                else runCatching { client.latestAdded(server, section.key, false) }.getOrDefault(emptyList())
-            }
-        }
-        shows.forEach { section ->
-            add { runCatching { client.onDeck(server, section.key) }.getOrDefault(emptyList()) }
-            add { runCatching { client.latestAdded(server, section.key, true, 80) }.getOrDefault(emptyList()) }
-        }
-    }
-    if (calls.isEmpty()) {
+    // Mobile (choix de Jeff) : les bibliothèques de vidéos personnelles ne vont pas sur l'accueil.
+    val sections = sections.filter { !it.personal }
+    if (sections.isEmpty()) {
         publish(end)
-        return listOf(
-            Shelf("Films - Continuer à voir", emptyList()),
-            Shelf("Films - Derniers ajouts", emptyList()),
-            Shelf("Séries - Continuer à voir", emptyList()),
-            Shelf("Séries - Derniers ajouts", emptyList()),
-        )
+        HomeDebug.set(emptyList())
+        return emptyList()
     }
-    val slice = (end - start) / calls.size
-    val loaded = calls.mapIndexed { index, call ->
-        stage(client, start + index * slice, start + (index + 1) * slice, publish, call)
+    val slice = (end - start) / sections.size
+    val homes = sections.mapIndexed { index, section ->
+        stage(client, start + index * slice, start + (index + 1) * slice, publish) { homeOf(client, server, section) }
     }
-    val movieCalls = movies.size * 2
-    return listOf(
-        Shelf("Films - Continuer à voir", loaded.filterIndexed { index, _ -> index < movieCalls && index % 2 == 0 }.flatten()),
-        Shelf("Films - Derniers ajouts", latestMovies(loaded.filterIndexed { index, _ -> index < movieCalls && index % 2 == 1 })),
-        Shelf("Séries - Continuer à voir", loaded.filterIndexed { index, _ -> index >= movieCalls && index % 2 == 0 }.flatten().map { seriesPoster(it) }),
-        Shelf("Séries - Derniers ajouts", latestEpisodes(loaded.filterIndexed { index, _ -> index >= movieCalls && index % 2 == 1 }).map { seriesPoster(it) }),
+    return finishHome(homes)
+}
+
+private fun homeRows(client: PlexClient, server: ServerEndpoint, sections: List<LibrarySection>): List<Shelf> =
+    finishHome(sections.filter { !it.personal }.map { homeOf(client, server, it) })
+
+/** Une bibliothèque sur l'accueil : ses deux rayons, dans l'ordre du serveur. */
+private class HomeOf(val section: LibrarySection, val allowed: Boolean, val note: String, val shelves: List<Shelf>)
+
+private fun finishHome(homes: List<HomeOf>): List<Shelf> {
+    HomeDebug.set(homes.map { it.section.title to it.note })
+    val shelves = homes.flatMap { it.shelves }.filter { it.items.isNotEmpty() }
+    // Les titres servent de clé : deux rayons ne doivent jamais porter le même.
+    val seen = mutableMapOf<String, Int>()
+    return shelves.map { shelf ->
+        val n = (seen[shelf.title] ?: 0) + 1
+        seen[shelf.title] = n
+        if (n == 1) shelf else shelf.copy(title = "${shelf.title} (${n})")
+    }
+}
+
+private fun homeOf(client: PlexClient, server: ServerEndpoint, section: LibrarySection): HomeOf {
+    val manage = runCatching { client.homeHubs(server, section.key) }.getOrNull()
+    // Réglage du serveur illisible ou vide : on ne filtre pas, seule la liste de gauche compte.
+    val allowed = manage.isNullOrEmpty() || manage.any { it.onHome }
+    val status = when {
+        manage == null -> "réglage du serveur illisible"
+        manage.isEmpty() -> "réglage du serveur vide"
+        allowed -> "autorisée (${manage.count { it.onHome }}/${manage.size} rayons)"
+        else -> "non autorisée sur l'accueil"
+    }
+    if (!allowed) return HomeOf(section, false, status, emptyList())
+    val isShow = section.type == "show"
+    val hubs = runCatching { client.sectionHubs(server, section.key) }.getOrNull().orEmpty()
+    fun hub(vararg words: String): HubEntry? =
+        words.firstNotNullOfOrNull { word -> hubs.firstOrNull { it.hubIdentifier.contains(word, ignoreCase = true) } }
+    val continueHub = hub("continue", "ondeck", "inprogress")
+    val addedHub = hub("recentlyadded")
+    val keep = continueHub?.Metadata
+        ?: runCatching { client.onDeck(server, section.key) }.getOrDefault(emptyList())
+    val added = addedHub?.Metadata
+        ?: runCatching { client.recentlyAdded(server, section.key, 80) }.getOrDefault(emptyList())
+    val shaped = { list: List<Metadata> -> if (isShow) list.map { seriesPoster(it) } else list }
+    val note = "$status · suite : ${continueHub?.hubIdentifier ?: "standard"} · ajouts : ${addedHub?.hubIdentifier ?: "standard"}"
+    return HomeOf(
+        section, true, note,
+        listOf(
+            Shelf("${section.title} - Continuer à voir", shaped(keep)),
+            Shelf("${section.title} - Derniers ajouts", shaped(if (isShow) groupAdditions(added) else added.take(HOME_LIMIT))),
+        ),
     )
 }
 
-/** Films de toutes les bibliothèques, du plus récent au plus ancien (24 au plus). */
-private fun latestMovies(lists: List<List<Metadata>>): List<Metadata> =
-    lists.flatten().distinctBy { it.ratingKey }.sortedByDescending { it.addedAt }.take(24)
+private const val HOME_LIMIT = 24
 
-/** Épisodes de toutes les bibliothèques triés par date, puis regroupés par saison (« N ajouts »). */
-private fun latestEpisodes(lists: List<List<Metadata>>): List<Metadata> =
-    groupAdditions(lists.flatten().distinctBy { it.ratingKey }.sortedByDescending { it.addedAt })
-
-private fun homeRows(client: PlexClient, server: ServerEndpoint, sections: List<LibrarySection>): List<Shelf> {
-    val movies = sections.filter { it.type == "movie" }
-    val shows = sections.filter { it.type == "show" }
-    return listOf(
-        Shelf("Films - Continuer à voir", movies.flatMap { runCatching { client.onDeck(server, it.key) }.getOrDefault(emptyList()) }),
-        Shelf("Films - Derniers ajouts", latestMovies(movies.filter { !it.personal }.map { runCatching { client.latestAdded(server, it.key, false) }.getOrDefault(emptyList()) })),
-        Shelf("Séries - Continuer à voir", shows.flatMap { runCatching { client.onDeck(server, it.key) }.getOrDefault(emptyList()) }.map { seriesPoster(it) }),
-        Shelf("Séries - Derniers ajouts", latestEpisodes(shows.map { runCatching { client.latestAdded(server, it.key, true, 80) }.getOrDefault(emptyList()) }).map { seriesPoster(it) }),
-    )
+/** Message simple, sans code technique, quand l'accueil ne peut pas être chargé. */
+private fun friendlyLoadError(error: Exception): String = when {
+    error is PlexHttpException && error.code >= 500 ->
+        "Le serveur Plex rencontre un problème (erreur ${error.code}). Réessayez dans quelques instants."
+    error is java.net.UnknownHostException || error is java.net.ConnectException || error is java.net.SocketTimeoutException || error is java.io.IOException && error !is PlexHttpException ->
+        "Le serveur Plex est injoignable. Vérifiez que le serveur est allumé et que la TV est bien connectée à Internet, puis réessayez."
+    else -> "Une erreur est survenue en chargeant vos bibliothèques. Réessayez, ou reconnectez-vous à votre compte."
 }
 
 private fun withSeriesPosters(rows: List<Shelf>): List<Shelf> =
@@ -1433,10 +1502,28 @@ private fun railEntries(shown: List<LibrarySection>): List<RailEntry> =
     listOf(RailEntry("home", "Accueil", "A", "home"), RailEntry("search", "Recherche", "R", "search")) +
         shown.map { RailEntry(it.key, it.title, sectionGlyph(it), it.type) }
 
+/** Films d'abord, séries ensuite, puis le reste ; chaque groupe par ordre alphabétique (sans accents ni majuscules). */
+private fun sortedLibraries(list: List<LibrarySection>): List<LibrarySection> {
+    fun words(title: String): List<String> =
+        java.text.Normalizer.normalize(title.lowercase(), java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.isNotEmpty() }
+    fun group(section: LibrarySection): Int {
+        val w = words(section.title)
+        return when {
+            w.any { it == "film" || it == "films" || it == "movie" || it == "movies" } -> 0
+            w.any { it == "serie" || it == "series" } -> 1
+            else -> 2
+        }
+    }
+    return list.sortedWith(compareBy<LibrarySection>({ group(it) }, { words(it.title).joinToString(" ") }))
+}
+
 private fun visibleSections(store: SessionStore, server: ServerEndpoint, all: List<LibrarySection>): List<LibrarySection> {
     val hidden = store.hiddenLibraries(server.clientIdentifier)
     val shown = all.filter { it.key !in hidden }
-    return shown.ifEmpty { all }
+    return sortedLibraries(shown.ifEmpty { all })
 }
 
 private fun seriesPoster(item: Metadata): Metadata {
@@ -1458,7 +1545,7 @@ private fun newsRows(client: PlexClient, server: ServerEndpoint, sectionKey: Str
         Shelf(
             "Nouveautés",
             runCatching {
-                if (isShow) groupAdditions(client.latestAdded(server, sectionKey, true, 80)) else client.latestAdded(server, sectionKey, false)
+                if (isShow) groupAdditions(client.recentlyAdded(server, sectionKey, 80)) else client.recentlyAdded(server, sectionKey)
             }.getOrDefault(emptyList()),
         ),
         Shelf("Les plus regardés", runCatching { client.mostWatched(server, sectionKey) }.getOrDefault(emptyList())),
@@ -1723,6 +1810,8 @@ private fun buildQueue(
             diag = diagText,
             fileLines = if (featureItem) sourceLines(settings, picked, boxWhy) else emptyList(),
             sourceAspect = if (picked != null && picked.width > 0 && picked.height > 0) picked.width.toFloat() / picked.height else 0f,
+            frameRate = if (featureItem) fileFrameRate(picked) else 0f,
+            dolbyVision = featureItem && isDolbyVision(picked),
             closeOnEnd = featureItem && feature.type == "movie",
             startMs = if (resume && featureItem) {
                 (feature.viewOffset.takeIf { it > 0L } ?: meta.viewOffset).let { (it - 5000L).coerceAtLeast(0L) }

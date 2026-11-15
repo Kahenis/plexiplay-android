@@ -1,6 +1,5 @@
 package tv.plexiplay.ui.player
 
-import android.app.ActivityManager
 import android.content.Context
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -8,24 +7,16 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.view.WindowManager
+import tv.plexiplay.HomeDebug
 
 /** Page « Diagnostic » du panneau « i » : appareil, écran, décodeurs, demande envoyée au serveur, réseau. */
 
-private fun mb(bytes: Long) = "${bytes / (1024 * 1024)} Mo"
 
 internal fun deviceLines(context: Context): List<InfoLine> {
     val lines = mutableListOf<InfoLine>()
     lines += "Appareil" to ""
     lines += "Modèle" to "${Build.MANUFACTURER} ${Build.MODEL}".trim()
-    val soc = if (Build.VERSION.SDK_INT >= 31) "${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL}".trim() else ""
-    lines += "Puce" to listOf(soc.takeIf { it.isNotBlank() && it != "unknown unknown" }, Build.HARDWARE).filterNotNull().joinToString(" · ")
     lines += "Android" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
-    runCatching {
-        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val info = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
-        lines += "Mémoire" to "${mb(info.availMem)} libres sur ${mb(info.totalMem)}" + if (info.lowMemory) " · MÉMOIRE BASSE" else ""
-        lines += "Appareil léger" to if (manager.isLowRamDevice) "oui" else "non"
-    }
     return lines
 }
 
@@ -98,9 +89,6 @@ internal fun requestLines(clip: ClipPlay?): List<InfoLine> {
         fun p(name: String) = uri?.getQueryParameter(name)?.ifBlank { null } ?: "—"
         lines += "Type" to "flux HLS converti"
         lines += "Image" to "codec ${p("videoCodec")} · résolution ${p("videoResolution")} · débit max ${p("maxVideoBitrate")} kbit/s"
-        lines += "Copie image" to "directStream ${p("directStream")} · profil étendu ${if (clip.url.contains("append-transcode-target-codec")) "oui (HEVC permis)" else "non"}"
-        lines += "Son" to "codec ${p("audioCodec")} · canaux max ${p("maxAudioChannels")} · gain ${p("audioBoost")}"
-        lines += "Pistes" to "audio ${p("audioStreamID")} · sous-titres ${p("subtitleStreamID")}"
     }
     lines += "Raison" to clip.info.split(" · ").firstOrNull().orEmpty().ifBlank { "?" }
     return lines
@@ -121,17 +109,16 @@ internal fun networkLines(context: Context): List<InfoLine> {
             else -> "autre"
         }
         lines += "Type" to kind
-        if (caps != null) {
-            lines += "Débit annoncé" to "descendant ${caps.linkDownstreamBandwidthKbps / 1000} Mbit/s · montant ${caps.linkUpstreamBandwidthKbps / 1000} Mbit/s"
-            if (Build.VERSION.SDK_INT >= 29 && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                val signal = caps.signalStrength
-                if (signal != NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED) lines += "Signal Wi-Fi" to "$signal dBm"
-            }
-        }
     }
     return lines
 }
 
+internal fun homeLines(): List<InfoLine> {
+    val home = HomeDebug.lines
+    if (home.isEmpty()) return emptyList()
+    return listOf<InfoLine>("Accueil (bibliothèques)" to "") + home
+}
+
 /** Page Diagnostic complète pour ExoPlayer ou mpv : [live] = mesures de lecture propres au lecteur. */
 internal fun diagnosticLines(context: Context, clip: ClipPlay?, live: List<InfoLine>): List<InfoLine> =
-    (clip?.fileLines.orEmpty()) + requestLines(clip) + live + deviceLines(context) + displayLines(context) + decoderLines() + networkLines(context)
+    (clip?.fileLines.orEmpty()) + requestLines(clip) + live + deviceLines(context) + displayLines(context) + networkLines(context) + homeLines()

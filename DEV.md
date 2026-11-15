@@ -92,6 +92,14 @@
 - Correction (propre au mobile) : `tap` / `tapOrHold` gardaient l'action de la première composition (`pointerInput(Unit)`) ; un réglage à choix ne passait plus à la valeur suivante après le premier toucher. Ils utilisent maintenant `rememberUpdatedState`.
 - Non repris : thème « Futuriste » (choix retiré, code présent mais inactif), prérolls en TextureView et réglage associé (code présent, jamais activé), manuels Utilisation / Réglages (fichiers retirés : textes écrits pour la télécommande), retour du focus après lecture (sans effet au doigt, code présent).
 
+## 1.6.2 : reprise des versions TV 1.9.1 à 1.9.2 (lot 3)
+
+- Fusion à trois voies `4feb41b` → `cebe852`.
+- Accueil : méthode de la TV (1.9.1.6, 1.9.1.7), qui remplace le tri par date de la 1.5.8 (abandonné aussi par la TV : l'ordre différait de l'appli Plex officielle). Deux rayons par bibliothèque (« <Bibliothèque> - Continuer à voir » / « - Derniers ajouts ») dans l'ordre du serveur (`/hubs/sections/{clé}`), seulement si le serveur autorise ses rayons sur l'accueil ; bibliothèques classées films, séries, puis les autres. Mobile : les bibliothèques de vidéos personnelles (`personal`) restent exclues de l'accueil (`loadHome`, `homeRows`). `PlexClient.latestAdded` (1.5.8) retiré ; « Nouveautés » d'une bibliothèque revient à `recentlyAdded`.
+- Repris : bouton « i » (toucher court = fiche du titre avec « Lecture en cours » ; appui long = données techniques puis Diagnostic), session refusée (retour à la connexion avec message) et écran « Réessayer », boutons « Passer l'intro / le générique » et réglages « Toujours passer… » (cadre Intros et génériques), Diagnostic allégé.
+- Adaptations mobile : barre de temps tactile du mobile conservée (la `SeekBar` télécommande de la TV n'est pas reprise, fichier retiré) ; bouton « Passer… » touchable, sans « · OK », placé au-dessus de la barre de commandes ; fiche du titre limitée à la largeur de l'écran ; écran « Réessayer » : boutons touchables, largeur adaptée ; textes d'aide des paramètres à 12 sp.
+- Non repris : cadre « TV Philips et équivalent » / « Correctif Dolby Vision » (masqué ; code présent), adaptation de la fréquence d'image (code présent, jamais activé).
+
 ---
 
 # Notes de développement (Plexiplay clone)

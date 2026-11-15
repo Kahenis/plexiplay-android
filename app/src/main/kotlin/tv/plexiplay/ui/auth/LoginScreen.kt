@@ -62,7 +62,7 @@ import tv.plexiplay.ui.theme.Paper
 import tv.plexiplay.ui.theme.Signal
 
 @Composable
-fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
+fun LoginScreen(auth: PinAuthClient, notice: String = "", onToken: (String) -> Unit) {
     var code by remember { mutableStateOf("----") }
     var pinId by remember { mutableStateOf<Long?>(null) }
     var qrId by remember { mutableStateOf<Long?>(null) }
@@ -142,6 +142,9 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
     val form: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
             Text("Plexiplay", color = Accent, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Text("Connexion au compte", color = Paper, fontSize = if (narrow) 28.sp else 40.sp, fontWeight = FontWeight.Bold)
+            if (notice.isNotBlank()) {
+                Text(notice, color = Color(0xFFFFB454), fontSize = if (narrow) 15.sp else 18.sp, modifier = Modifier.padding(top = 6.dp))
+            }
             // En mode e-mail, le gros code et les aides sont masqués pour laisser la place aux champs.
             if (!classic) {
                 Text(

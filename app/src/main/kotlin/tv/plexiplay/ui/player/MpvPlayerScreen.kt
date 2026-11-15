@@ -124,6 +124,10 @@ internal fun MpvPlayerScreen(
     onCompat: () -> Unit = {},
     onPrerollStarted: (ClipPlay) -> Unit = {},
     onPrerollError: (ClipPlay, Boolean) -> Unit = { _, _ -> },
+    titleInfo: suspend (String) -> TitleInfo? = { null },
+    skipMarkers: suspend (String) -> List<SkipMarker> = { emptyList() },
+    autoSkipIntro: Boolean = false,
+    autoSkipCredits: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     var userSkipped by remember { mutableStateOf(false) }
@@ -332,6 +336,86 @@ internal fun MpvPlayerScreen(
         }
     }
 
+    // Fiche du titre (appui court sur « i ») : demandée au serveur, gardée en mémoire pour la suite.
+    var titleCard by remember { mutableStateOf<TitleInfo?>(null) }
+    val cardCache = remember { mutableMapOf<String, TitleInfo>() }
+    var nowPlaying by remember { mutableStateOf("") }
+    fun nowPlayingText(): String {
+        val core = screen?.mpv ?: return ""
+        fun prop(name: String) = core.getString(name).orEmpty().trim()
+        val subLang = prop("current-tracks/sub/lang")
+        val subOn = prop("current-tracks/sub/id").isNotBlank() && prop("sid") != "no"
+        val subtitles = if (!subOn) "" else listOf(languageName(subLang).ifBlank { prop("current-tracks/sub/title") }, if (prop("current-tracks/sub/forced") == "yes") "forcés" else "").filter { it.isNotBlank() }.joinToString(" ")
+        return nowPlayingLine(
+            core[MpvProperties.Width].getOrNull()?.toInt() ?: 0,
+            core[MpvProperties.Height].getOrNull()?.toInt() ?: 0,
+            prop("audio-codec-name"),
+            prop("audio-params/channel-count").toIntOrNull() ?: 0,
+            prop("current-tracks/audio/lang"),
+            subtitles,
+        )
+    }
+    LaunchedEffect(titleCard != null) {
+        while (titleCard != null) {
+            nowPlaying = nowPlayingText()
+            // Le film ou l'épisode a changé depuis l'ouverture de la fiche : elle n'est plus la bonne.
+            val shownKey = titleCard?.key
+            val now = index
+            val expected = clips.drop(now).firstOrNull { it.kind == ClipKind.FEATURE }?.ratingKey ?: clips.getOrNull(now)?.ratingKey
+            if (shownKey != null && expected != null && shownKey != expected) titleCard = null
+            delay(700)
+        }
+    }
+    // Intro et générique : repères du serveur Plex, bouton « Passer… » et saut automatique (réglages).
+    val skipState = remember { SkipState() }
+    var activeSkip by remember { mutableStateOf<SkipMarker?>(null) }
+    fun skipNow(marker: SkipMarker) {
+        val duration = ((screen?.mpv?.get(MpvProperties.Duration)?.getOrNull() ?: 0.0) * 1000).toLong()
+        screen?.seek(skipTarget(marker, duration) / 1000.0, SeekMode.Absolute, SeekPrecision.Keyframes)
+        notice = marker.doneNotice
+        activeSkip = null
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val core = screen?.mpv
+            val at = if (core != null) core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: index else index
+            val clip = clips.getOrNull(at)
+            if (core != null && clip != null && clip.kind == ClipKind.FEATURE) {
+                val key = clip.ratingKey
+                if (skipState.requested.add(key)) {
+                    scope.launch { skipState.markers[key] = runCatching { skipMarkers(key) }.getOrDefault(emptyList()) }
+                }
+                val position = ((core[MpvProperties.TimePos].getOrNull() ?: 0.0) * 1000).toLong()
+                val found = activeMarker(skipState.markers[key].orEmpty(), position)
+                val auto = found != null && ((found.kind == "intro" && autoSkipIntro) || (found.kind == "credits" && autoSkipCredits && !clip.closeOnEnd))
+                if (found != null && auto && skipState.autoDone.add("$key:${found.kind}:${found.startMs}")) {
+                    skipNow(found)
+                } else {
+                    activeSkip = found
+                }
+            } else {
+                activeSkip = null
+            }
+            delay(500)
+        }
+    }
+    fun showTitleCard(current: Int) {
+        val target = clips.drop(current).firstOrNull { it.kind == ClipKind.FEATURE } ?: clips.getOrNull(current) ?: return
+        infoVisible = false
+        val cached = cardCache[target.ratingKey]
+        if (cached != null) {
+            titleCard = cached
+            return
+        }
+        val key = target.ratingKey
+        titleCard = TitleInfo(key, target.label, summary = "Chargement…")
+        scope.launch {
+            val loaded = runCatching { titleInfo(key) }.getOrNull()
+            if (loaded != null) cardCache[key] = loaded
+            if (titleCard?.key == key) titleCard = loaded ?: TitleInfo(key, target.label)
+        }
+    }
+
     fun reveal() {
         shown.value = true
         pulse += 1
@@ -527,7 +611,12 @@ internal fun MpvPlayerScreen(
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (!shown.value) {
-                            reveal()
+                            val skip = activeSkip
+                            if (skip != null) {
+                                skipNow(skip)
+                            } else {
+                                reveal()
+                            }
                             swallowOkUp = true
                             true
                         } else {
@@ -663,6 +752,8 @@ internal fun MpvPlayerScreen(
                 },
             )
         }
+        titleCard?.let { TitleInfoPanel(it, nowPlaying, Modifier.align(Alignment.TopStart)) }
+        activeSkip?.takeIf { !audioMenu && !subMenu }?.let { SkipButton(it, shown.value, Modifier.align(Alignment.BottomEnd)) { skipNow(it) } }
         if (infoVisible) {
             if (infoPage == 0) {
                 InfoPanel(playbackLines(clips.getOrNull(index), "mpv") + mpvLive, Modifier.align(Alignment.TopStart))
@@ -736,15 +827,25 @@ internal fun MpvPlayerScreen(
                         forceFrench()
                         reveal()
                     }
-                    PlayerIcon(Glyph.Info) {
-                        if (!infoVisible) {
-                            infoVisible = true
-                            infoPage = 0
-                        } else if (infoPage == 0) {
-                            infoPage = 1
-                        } else {
-                            infoVisible = false
-                        }
+                    PlayerIcon(
+                        Glyph.Info,
+                        onLongPress = {
+                            // Appui de 3 secondes : données techniques (lecture, puis diagnostic, puis fermeture).
+                            titleCard = null
+                            if (!infoVisible) {
+                                infoVisible = true
+                                infoPage = 0
+                            } else if (infoPage == 0) {
+                                infoPage = 1
+                            } else {
+                                infoVisible = false
+                            }
+                            reveal()
+                        },
+                        longPressMs = 3000L,
+                    ) {
+                        // Appui court : fiche du film ou de l'épisode.
+                        if (titleCard != null) titleCard = null else showTitleCard(index)
                         reveal()
                     }
                     PlayerIcon(Glyph.Skip) {

@@ -30,6 +30,11 @@ data class PlaybackSettings(
     val convertTitles: Set<String> = emptySet(),
     /** Box d'opérateur sur TV Full HD : image 4K ou HDR / 10 bits convertie en H.264 8 bits SDR, 1080p maximum. */
     val boxFullHd: Boolean = false,
+    /** « Dolby Vision sans saut d'image » (cadre TV Philips et équivalent) : les films Dolby Vision sont lus en mode compatible (HDR10). */
+    val dvNoSkip: Boolean = false,
+    /** « Toujours passer les intros » / « … les génériques » : saut automatique d'après les repères du serveur Plex (par défaut non). */
+    val skipIntro: Boolean = false,
+    val skipCredits: Boolean = false,
     /** Prérolls : « sequential » (fichiers de guilard.com/preroll, un par film dans l'ordre) ou « random » (prérolls du serveur Plex). */
     val prerollMode: String = "sequential",
     /** Dossier des prérolls introuvable : réglage grisé sur « Aléatoire serveur » (un appui long le réactive). */

@@ -119,6 +119,7 @@ data class Metadata(
     val art: String = "",
     val summary: String = "",
     val tagline: String = "",
+    val contentRating: String = "",
     val theme: String = "",
     val duration: Long = 0,
     val rating: Float = 0f,
@@ -127,8 +128,9 @@ data class Metadata(
     val ratingImage: String = "",
     val viewCount: Int = 0,
     val viewOffset: Long = 0,
-    /** Date d'ajout dans la bibliothèque (secondes depuis 1970), pour trier les derniers ajouts. */
+    /** Dates Plex (secondes) : ajout à la bibliothèque et dernière lecture. */
     val addedAt: Long = 0,
+    val lastViewedAt: Long = 0,
     val index: Int = 0,
     val parentIndex: Int = 0,
     val leafCount: Int = 0,
@@ -147,6 +149,10 @@ data class Metadata(
     val Rating: List<RatingItem> = emptyList(),
     val Media: List<MediaInfo> = emptyList(),
     val Role: List<RoleItem> = emptyList(),
+    val Director: List<TagItem> = emptyList(),
+    val Producer: List<TagItem> = emptyList(),
+    val Writer: List<TagItem> = emptyList(),
+    val Marker: List<MarkerItem> = emptyList(),
 )
 
 /** Acteur d'un film ou d'une série : nom (tag), personnage (role), photo (thumb), identifiants Plex. */
@@ -192,3 +198,27 @@ data class SettingBox(val Setting: List<ServerSetting> = emptyList())
 
 @Serializable
 data class Wrapped<T>(val MediaContainer: T? = null)
+
+/** Rayon renvoyé par le serveur (accueil d'une bibliothèque). Les drapeaux « promotedTo… » peuvent être 0/1 ou true/false. */
+@Serializable
+data class HubEntry(
+    val hubIdentifier: String = "",
+    val title: String = "",
+    val context: String = "",
+    val promotedToOwnHome: kotlinx.serialization.json.JsonPrimitive? = null,
+    val Metadata: List<Metadata> = emptyList(),
+) {
+    val onHome: Boolean
+        get() = promotedToOwnHome?.content.let { it == "true" || it == "1" }
+}
+
+@Serializable
+data class HubBox(val Hub: List<HubEntry> = emptyList())
+
+/** Repère posé par le serveur Plex (type « intro » ou « credits »), en millisecondes ; demandé avec includeMarkers=1. */
+@Serializable
+data class MarkerItem(
+    val type: String = "",
+    val startTimeOffset: Long = 0,
+    val endTimeOffset: Long = 0,
+)
