@@ -8,9 +8,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
-/** Thème actif : classique (par défaut) ou « Néon » (réglage dans les paramètres). */
+/** Thème actif : classique (par défaut) « Néon » ou « Futuriste » (réglage dans les paramètres). */
 object ThemeMode {
     var neon by mutableStateOf(false)
+
+    /** « Futuriste » : le thème Néon (couleurs, boutons) plus les effets animés. */
+    var future by mutableStateOf(false)
 }
 
 val Ink: Color get() = if (ThemeMode.neon) Color(0xFF070A1C) else Color(0xFF121418)

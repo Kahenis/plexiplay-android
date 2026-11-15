@@ -134,11 +134,19 @@ private fun App(
     updates: AppUpdate,
     applyLanguage: (String) -> Unit,
 ) {
-    remember { tv.plexiplay.ui.theme.ThemeMode.neon = store.theme() == "neon"; true }
+    remember {
+        tv.plexiplay.ui.theme.ThemeMode.neon = store.theme() == "neon" || store.theme() == "future"
+        tv.plexiplay.ui.theme.ThemeMode.future = store.theme() == "future"
+        true
+    }
     var themeVolume by remember { mutableIntStateOf(store.themeVolume()) }
     var prerollVolume by remember { mutableIntStateOf(store.prerollVolume()) }
+    var prerollTexture by remember { mutableStateOf(store.prerollTexture()) }
+    var sagas by remember { mutableStateOf(store.sagaMode()) }
+    var movieTotal by remember { mutableIntStateOf(-1) }
     var prerollPauseUntil by remember { mutableStateOf(store.prerollPauseUntil()) }
     prerollPauseUntilMs = prerollPauseUntil
+    PrerollFolder.store = store
     var token by remember { mutableStateOf(store.token()) }
     var accountName by remember { mutableStateOf(store.accountName()) }
     LaunchedEffect(token) {
@@ -156,9 +164,20 @@ private fun App(
     var servers by remember { mutableStateOf(store.servers()) }
     var serverIndex by remember { mutableStateOf(store.activeServerIndex()) }
     var settings by remember { mutableStateOf(store.settings()) }
+    // Dossier des prérolls reconnu absent : le réglage se grise, l'écran relit les réglages.
+    PrerollFolder.onLocked = { runOnUi { settings = store.settings() } }
     var entries by remember { mutableStateOf(railEntries(emptyList())) }
     var sections by remember { mutableStateOf<List<LibrarySection>>(emptyList()) }
     var picker by remember { mutableStateOf(false) }
+    var stylePicker by remember { mutableStateOf(false) }
+    // « Idée TV » : popup de 5 films tirés au hasard ; l'état reste ici pour retrouver les 5 films après une bande-annonce ou une fiche.
+    var ideaOpen by remember { mutableStateOf(false) }
+    var ideaChoice by remember { mutableStateOf<String?>(null) }
+    var ideaCard by remember { mutableStateOf<tv.plexiplay.ui.shell.StyleCard?>(null) }
+    var ideaFilms by remember { mutableStateOf<List<Metadata>>(emptyList()) }
+    var ideaBusy by remember { mutableStateOf(false) }
+    var ideaNote by remember { mutableStateOf("") }
+    var style by remember { mutableStateOf<tv.plexiplay.ui.shell.StyleCard?>(null) }
     var catalog by remember { mutableStateOf<List<Metadata>?>(null) }
     var selected by remember { mutableStateOf("home") }
     var pane by remember { mutableStateOf(LibraryPane.NEWS) }
@@ -228,6 +247,8 @@ private fun App(
             startupOffer != null && clips == null && updateStatus != "Téléchargement…" -> startupOffer = null
             pendingInvites != null -> if (!inviteBusy) pendingInvites = null
             confirm != null -> confirm = null
+            ideaOpen && clips == null && movie == null && series == null && confirm == null -> ideaOpen = false
+            stylePicker -> stylePicker = false
             picker -> picker = false
             clips != null -> if (playerBack.value?.invoke() != true) clips = null
             episodeOpen != null -> episodeOpen = null
@@ -428,7 +449,15 @@ private fun App(
     val useShelves = selected != "settings" && selected != "search" && !inside && (selected == "home" || pane == LibraryPane.NEWS)
     val showTabs = selected != "home" && selected != "settings" && selected != "search" && !inside
 
-    LaunchedEffect(selected, pane, stack, collection?.ratingKey, server?.uri, sections) {
+    // Nombre total de films de la bibliothèque (sagas comprises), indépendant de l'interrupteur « Sagas ».
+    LaunchedEffect(selected, server?.uri, sections) {
+        val active = server
+        movieTotal = -1
+        if (active == null || entries.firstOrNull { it.id == selected }?.type != "movie") return@LaunchedEffect
+        movieTotal = withContext(Dispatchers.IO) { client.totalSize(active, selected) }
+    }
+
+    LaunchedEffect(selected, pane, stack, collection?.ratingKey, server?.uri, sections, style, sagas) {
         val active = server ?: return@LaunchedEffect
         if (selected == "settings" || selected == "search") return@LaunchedEffect
         if (shelves.isEmpty() && items.isEmpty()) status = "Chargement…"
@@ -440,6 +469,14 @@ private fun App(
                     selected == "home" -> Loaded.Rows(homeRows(client, active, sections))
                     parent != null -> Loaded.Grid(client.children(active, parent.ratingKey), parent.title)
                     currentCollection != null -> Loaded.Grid(client.children(active, currentCollection.ratingKey), currentCollection.title)
+                    pane == LibraryPane.LIBRARY && style != null -> Loaded.Grid(
+                        client.itemsByGenre(active, selected, style!!.keys),
+                        "Style : " + style!!.label,
+                    )
+                    pane == LibraryPane.LIBRARY && sagas && entries.firstOrNull { it.id == selected }?.type == "movie" -> Loaded.Grid(
+                        client.itemsWithCollections(active, selected),
+                        entries.firstOrNull { it.id == selected }?.title ?: "Bibliothèque",
+                    )
                     pane == LibraryPane.LIBRARY -> Loaded.Grid(
                         client.items(active, selected),
                         entries.firstOrNull { it.id == selected }?.title ?: "Bibliothèque",
@@ -484,7 +521,7 @@ private fun App(
     }
 
     val pageKey = selected + "|" + pane.name + "|" +
-        stack.joinToString(",") { it.ratingKey } + "|" + (collection?.ratingKey ?: "")
+        stack.joinToString(",") { it.ratingKey } + "|" + (collection?.ratingKey ?: "") + "|" + (style?.label ?: "")
     val closeDetail = {
         val key = movie?.ratingKey
         if (key != null) {
@@ -535,7 +572,7 @@ private fun App(
         selectedId = selected,
         pane = pane,
         pageKey = pageKey,
-        covered = movie != null || series != null || clips != null || confirm != null || picker || startupOffer != null || pendingInvites != null,
+        covered = stylePicker || ideaOpen || movie != null || series != null || clips != null || confirm != null || picker || startupOffer != null || pendingInvites != null,
         restoreKey = restoreKey,
         restoreToken = restoreToken,
         shelves = shelves,
@@ -546,16 +583,32 @@ private fun App(
         posters = posters,
         backdrop = if (collection != null) collectionArt else null,
         status = status,
-        count = if (pane == LibraryPane.LIBRARY && items.isNotEmpty() && entries.firstOrNull { it.id == selected }?.type == "show") items.size else -1,
+        count = if (pane == LibraryPane.LIBRARY && items.isNotEmpty() && (style != null || entries.firstOrNull { it.id == selected }?.type == "show")) {
+            items.size
+        } else if (pane == LibraryPane.LIBRARY && items.isNotEmpty() && !inside && movieTotal >= 0 && entries.firstOrNull { it.id == selected }?.type == "movie") {
+            movieTotal
+        } else {
+            -1
+        },
+        styleActive = style != null && pane == LibraryPane.LIBRARY,
+        onStyle = { stylePicker = true },
+        onIdea = {
+            ideaChoice = null
+            ideaCard = null
+            ideaFilms = emptyList()
+            ideaNote = ""
+            ideaOpen = true
+        },
         onSelect = {
             selected = it.id
             stack = emptyList()
             collection = null
+            style = null
             pane = LibraryPane.NEWS
         },
         onOpen = { item ->
             when {
-                showTabs && pane == LibraryPane.COLLECTIONS && item.type == "collection" ->
+                showTabs && (pane == LibraryPane.COLLECTIONS || pane == LibraryPane.LIBRARY) && item.type == "collection" ->
                     collection = item
                 item.type == "show" -> {
                     seriesFrom = item.ratingKey
@@ -605,6 +658,7 @@ private fun App(
         onPane = {
             pane = it
             collection = null
+            style = null
             stack = emptyList()
         },
         onForget = { item, _ ->
@@ -635,6 +689,9 @@ private fun App(
             } else if (collection != null) {
                 collection = null
                 true
+            } else if (style != null) {
+                style = null
+                true
             } else false
         },
         search = {
@@ -662,6 +719,11 @@ private fun App(
                         stack = emptyList()
                     },
                     onSignOut = { confirm = "signout" },
+                    prerollTexture = prerollTexture,
+                    onPrerollTexture = {
+                        prerollTexture = it
+                        store.savePrerollTexture(it)
+                    },
                     inviteStatus = inviteStatus,
                     onCheckInvites = {
                         val current = token
@@ -730,7 +792,7 @@ private fun App(
                         offer = null
                         updateStatus = "Mise à jour annulée"
                     },
-                    theme = if (tv.plexiplay.ui.theme.ThemeMode.neon) "neon" else "classic",
+                    theme = if (tv.plexiplay.ui.theme.ThemeMode.future) "future" else if (tv.plexiplay.ui.theme.ThemeMode.neon) "neon" else "classic",
                     themeVolume = themeVolume,
                     onThemeVolume = {
                         store.saveThemeVolume(it)
@@ -753,8 +815,14 @@ private fun App(
                         prerollVolume = it
                     },
                     onTheme = {
-                        store.saveTheme(it)
-                        tv.plexiplay.ui.theme.ThemeMode.neon = it == "neon"
+                        if (it == "future") {
+                            // Le thème Futuriste demande une TV puissante : on prévient avant de l'appliquer.
+                            confirm = "future-theme"
+                        } else {
+                            store.saveTheme(it)
+                            tv.plexiplay.ui.theme.ThemeMode.neon = it == "neon"
+                            tv.plexiplay.ui.theme.ThemeMode.future = false
+                        }
                     },
                 )
             }
@@ -815,6 +883,14 @@ private fun App(
             onPlay = { show, episode -> playEpisode(show.ratingKey, episode, null, episode.viewOffset >= 30_000L) },
             onClose = closeSeries,
             notice = playError,
+            onTrailers = { full ->
+                val active = activeServer
+                playError = ""
+                Thread {
+                    val built = if (active == null) emptyList() else runCatching { trailerQueue(client, active, full, settings, store.clientId()) }.getOrDefault(emptyList())
+                    runOnUi { if (built.isNotEmpty()) clips = built else playError = "Aucune bande-annonce pour cette série." }
+                }.start()
+            },
         )
     }
     val openedEpisode = episodeOpen
@@ -859,6 +935,7 @@ private fun App(
             engine = settings.engine,
             playerKind = settings.player,
             prerollVolume = prerollVolume / 100f,
+            prerollTexture = prerollTexture,
             onProgress = { key, state, position, duration ->
                 // Enchaînement sans fin des épisodes : pendant le dernier de la file, la suite est préparée ;
                 // à la fin de cet épisode, une nouvelle file prend le relais.
@@ -966,6 +1043,8 @@ private fun App(
             mpvMode = settings.mpvMode,
             formatFix = settings.formatFix,
             compat = settings.compat || (clips?.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE }?.ratingKey in settings.compatTitles),
+            onPrerollStarted = { clip -> if (clip.prerollFile.isNotBlank()) store.setPrerollLast(clip.prerollFile) },
+            onPrerollError = { clip, fileFault -> if (fileFault && clip.prerollKey.isNotBlank()) store.addPrerollBad(clip.prerollKey) },
             onCompat = {
                 val active = server
                 val featureClip = clips?.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE }
@@ -992,6 +1071,73 @@ private fun App(
             },
         )
       }
+    }
+    if (ideaOpen && clips == null && movie == null && series == null) {
+        val active = server
+        if (active != null) {
+            val draw: (tv.plexiplay.ui.shell.StyleCard?) -> Unit = { card ->
+                if (!ideaBusy) {
+                    ideaBusy = true
+                    ideaNote = ""
+                    val section = selected
+                    val before = ideaFilms.map { it.ratingKey }.toSet()
+                    Thread {
+                        val picked = runCatching {
+                            tv.plexiplay.ui.shell.pickIdeas(client, active, section, card, before)
+                        }.getOrDefault(emptyList())
+                        runOnUi {
+                            ideaFilms = picked
+                            ideaBusy = false
+                            ideaNote = if (picked.isEmpty()) "Aucun film non vu pour ce choix." else ""
+                        }
+                    }.start()
+                }
+            }
+            tv.plexiplay.ui.shell.IdeaTvDialog(
+                loadStyles = { client.genres(active, selected) },
+                choice = ideaChoice,
+                films = ideaFilms,
+                busy = ideaBusy,
+                note = ideaNote,
+                thumb = { item -> client.thumbSources(active, item.thumb) },
+                posters = posters,
+                onChoose = { card, label ->
+                    ideaCard = card
+                    ideaChoice = label
+                    ideaFilms = emptyList()
+                    draw(card)
+                },
+                onRedraw = { draw(ideaCard) },
+                onOpen = { item -> openMovie(item) },
+                onTrailer = { item ->
+                    Thread {
+                        val built = runCatching { trailerQueue(client, active, item, settings, store.clientId()) }.getOrDefault(emptyList())
+                        runOnUi { if (built.isNotEmpty()) clips = built else ideaNote = "Pas de bande-annonce pour ce film." }
+                    }.start()
+                },
+                onClose = { ideaOpen = false },
+            )
+        }
+    }
+    if (stylePicker) {
+        val active = server
+        if (active != null) {
+            tv.plexiplay.ui.shell.StylePicker(
+                cacheKey = active.uri + "|" + selected,
+                loadStyles = { client.genres(active, selected) },
+                pickFilms = { card -> client.itemsByGenre(active, selected, card.keys, 12) },
+                wide = { path -> client.wideSources(active, path, 640, 360) },
+                posters = posters,
+                onPick = { card ->
+                    stylePicker = false
+                    collection = null
+                    stack = emptyList()
+                    pane = LibraryPane.LIBRARY
+                    style = card
+                },
+                onClose = { stylePicker = false },
+            )
+        }
     }
     if (picker) {
         LibraryPicker(
@@ -1020,8 +1166,23 @@ private fun App(
     }
     // Horloge en haut à droite, partout sauf pendant la lecture.
     if (clips == null) {
+        val sagaSwitchShown = movie == null && series == null && !stylePicker && !ideaOpen && confirm == null && !picker &&
+            startupOffer == null && pendingInvites == null && pane == LibraryPane.LIBRARY && style == null && !inside &&
+            entries.firstOrNull { it.id == selected }?.type == "movie"
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopEnd) {
-            tv.plexiplay.ui.shell.ClockChip(Modifier.padding(top = 10.dp, end = 18.dp))
+            androidx.compose.foundation.layout.Row(Modifier.padding(top = 10.dp, end = 18.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                if (sagaSwitchShown) {
+                    tv.plexiplay.ui.shell.SagaSwitch(
+                        on = sagas,
+                        onToggle = {
+                            sagas = !sagas
+                            store.saveSagaMode(sagas)
+                        },
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 10.dp))
+                }
+                tv.plexiplay.ui.shell.ClockChip()
+            }
         }
     }
     val invitesShown = pendingInvites
@@ -1115,6 +1276,16 @@ private fun App(
                 store.clearSession()
                 token = null
                 servers = emptyList()
+            },
+            onNo = { confirm = null },
+        )
+        "future-theme" -> ConfirmDialog(
+            question = "Le thème Futuriste utilise beaucoup d'effets animés (faisceaux, zooms, fond animé) : il demande une TV ou un boîtier puissant et récent. Sur un appareil modeste, l'affichage peut ralentir. Activer quand même ? (Vous pourrez revenir au thème Classique ou Néon dans les paramètres.)",
+            onYes = {
+                confirm = null
+                store.saveTheme("future")
+                tv.plexiplay.ui.theme.ThemeMode.neon = true
+                tv.plexiplay.ui.theme.ThemeMode.future = true
             },
             onNo = { confirm = null },
         )
@@ -1322,7 +1493,24 @@ private fun buildQueue(
     // Bonus du serveur (« lire la piste 1 avant le film ») : demandé comme le client officiel, avec 0 bande-annonce
     // de cinéma ; le serveur choisit seul (au hasard ou à la suite). Pas de bonus quand on reprend un film en cours.
     val resuming = resume && feature.viewOffset > 0L
-    val asked = if (feature.type == "movie" && bonus && !resuming && System.currentTimeMillis() >= prerollPauseUntilMs) {
+    val wantPreroll = feature.type == "movie" && bonus && !resuming && System.currentTimeMillis() >= prerollPauseUntilMs
+    val sequential = settings.prerollMode == "sequential" && !settings.prerollLocked
+    // Séquentiel externe : un fichier du dossier guilard.com/preroll, le suivant dans l'ordre. Dossier absent, injoignable ou sans fichier utilisable :
+    // prérolls du serveur Plex (le dossier absent grise en plus le réglage, voir PrerollFolder.choose).
+    val chosen = if (wantPreroll && sequential) PrerollFolder.choose() else null
+    val remoteClip = (chosen as? PrerollFolder.Choice.Remote)?.file?.let {
+        ClipPlay(
+            url = it.url,
+            label = "Bonus",
+            kind = ClipKind.PREROLL,
+            ratingKey = "",
+            info = "préroll séquentiel · ${it.name}",
+            direct = true,
+            prerollFile = it.name,
+            prerollKey = it.key,
+        )
+    }
+    val asked = if (wantPreroll && remoteClip == null) {
         runCatching {
             client.cinemaQueue(server, feature.ratingKey, 0)
         }.getOrDefault(emptyList())
@@ -1330,7 +1518,7 @@ private fun buildQueue(
         emptyList()
     }
     val items = if (asked.any { it.ratingKey == feature.ratingKey }) asked else listOf(feature)
-    return items.mapNotNull { item ->
+    return listOfNotNull(remoteClip) + items.mapNotNull { item ->
         runCatching {
         val kind = when {
             item.ratingKey == feature.ratingKey -> ClipKind.FEATURE

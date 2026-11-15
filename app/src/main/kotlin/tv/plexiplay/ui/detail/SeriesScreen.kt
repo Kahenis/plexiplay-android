@@ -3,6 +3,7 @@ package tv.plexiplay.ui.detail
 import tv.plexiplay.ui.theme.tapOrHold
 
 import tv.plexiplay.ui.theme.screenBackground
+import tv.plexiplay.ui.theme.futureEntrance
 import android.graphics.Bitmap
 import android.view.LayoutInflater
 import android.widget.FrameLayout
@@ -98,6 +99,7 @@ fun SeriesScreen(
     onClose: () -> Unit,
     notice: String = "",
     themeVolume: Float = 0.5f,
+    onTrailers: (Metadata) -> Unit = {},
 ) {
     val context = LocalContext.current
     var show by remember(seed.ratingKey) { mutableStateOf(seed) }
@@ -232,6 +234,7 @@ fun SeriesScreen(
         modifier = Modifier
             .fillMaxSize()
             .screenBackground()
+            .futureEntrance()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
                     if (season != null) onSeason(null) else onClose()
@@ -250,6 +253,7 @@ fun SeriesScreen(
             val metaLine = listOf(if (show.year > 0) show.year.toString() else "", seasonsLabel, episodesLabel)
                 .filter { it.isNotBlank() }
                 .joinToString("   ")
+            tv.plexiplay.ui.theme.FutureGlass(Modifier.fillMaxWidth(0.62f).fillMaxHeight().padding(start = 18.dp, top = 14.dp, end = 6.dp, bottom = 8.dp))
             Column(
                 Modifier
                     .fillMaxWidth(if (compact) 1f else 0.62f)
@@ -298,6 +302,7 @@ fun SeriesScreen(
                     Action(label, playFocus, primary = true) {
                         if (episode != null) onPlay(show, episode) else note = "Aucun épisode lisible"
                     }
+                    Action("🎬 Trailer") { onTrailers(show) }
                     Action(if (watched) "Série marquée comme vue" else "Marquer la série comme vue") {
                         val state = !watched
                         watched = state

@@ -3,6 +3,8 @@ package tv.plexiplay.ui.detail
 import tv.plexiplay.ui.theme.tap
 
 import tv.plexiplay.ui.theme.screenBackground
+import tv.plexiplay.ui.theme.FutureGlass
+import tv.plexiplay.ui.theme.futureEntrance
 import tv.plexiplay.ui.theme.themedButton
 import android.view.LayoutInflater
 import android.widget.FrameLayout
@@ -242,7 +244,24 @@ fun MovieDetailScreen(
         themePlayer.prepare()
         themePlayer.playWhenReady = true
     }
-    LaunchedEffect(Unit) { runCatching { playFocus.requestFocus() } }
+    // Focus sur « Lecture » / « Reprendre » à l'ouverture et au retour du lecteur. La demande est renouvelée dans la première seconde :
+    // le bouton peut ne pas être encore là, ou être remplacé par « Reprendre à … » quand les infos à jour du film arrivent, et le focus
+    // tombait alors sur le résumé. Passé ce délai, on ne touche plus au focus (sauf s'il est sur le résumé juste après un changement de bouton).
+    val openedAt = remember { android.os.SystemClock.elapsedRealtime() }
+    LaunchedEffect(Unit) {
+        runCatching { playFocus.requestFocus() }
+        for (wait in longArrayOf(150, 200, 250)) {
+            delay(wait)
+            runCatching { playFocus.requestFocus() }
+        }
+        delay(400)
+        if (summaryFocused) runCatching { playFocus.requestFocus() }
+    }
+    val resumable = movie.viewOffset >= 30_000L
+    LaunchedEffect(resumable) {
+        delay(120)
+        if (summaryFocused && android.os.SystemClock.elapsedRealtime() - openedAt < 5_000L) runCatching { playFocus.requestFocus() }
+    }
     LaunchedEffect(menu) {
         if (menu != null) runCatching { menuFocus.requestFocus() } else runCatching { playFocus.requestFocus() }
     }
@@ -256,6 +275,7 @@ fun MovieDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .screenBackground()
+            .futureEntrance()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
                     if (summaryOpen) summaryOpen = false else if (actor != null) actor = null else if (menu != null) menu = null else onClose()

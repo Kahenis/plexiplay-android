@@ -113,6 +113,9 @@ data class ClipPlay(
     val diag: String = "",
     /** Détails du fichier d'origine pour la page Diagnostic du panneau « i » (libellé, valeur ; valeur vide = titre de section). */
     val fileLines: List<Pair<String, String>> = emptyList(),
+    /** Préroll séquentiel (dossier guilard.com/preroll) : nom du fichier et clé nom|signature, vides pour les autres vidéos. */
+    val prerollFile: String = "",
+    val prerollKey: String = "",
     /** Langue audio demandée après un changement de piste (relance complète) : le lecteur vérifie qu'elle est bien jouée. */
     val expectAudio: String = "",
 )
@@ -128,11 +131,16 @@ fun PlayerScreen(
     playerKind: PlayerKind = PlayerKind.EXO,
     // Volume du lecteur pendant un preroll (0 à 1) ; le film et les bandes-annonces gardent 1.
     prerollVolume: Float = 0.75f,
+    // Prérolls dans une vue TextureView (réglage « Prérolls en TextureView ») ; sinon affichage habituel comme avant la 1.8.2.
+    prerollTexture: Boolean = false,
     onProgress: (ratingKey: String, state: String, position: Long, duration: Long) -> Unit,
     onExit: () -> Unit,
     onRegisterBack: ((() -> Boolean)?) -> Unit = {},
     compat: Boolean = false,
     onCompat: () -> Unit = {},
+    // Préroll séquentiel : lu (démarré) ou en erreur (fichier à mettre de côté).
+    onPrerollStarted: (ClipPlay) -> Unit = {},
+    onPrerollError: (ClipPlay, Boolean) -> Unit = { _, _ -> },
     mpvMode: String = "light",
     formatFix: Boolean = true,
     onAudioChosen: (ClipPlay) -> Unit = {},
@@ -144,7 +152,7 @@ fun PlayerScreen(
     onReload: suspend (ClipPlay, Int, Int, Long, String) -> Boolean = { _, _, _, _, _ -> false },
 ) {
     if (playerKind == PlayerKind.MPV) {
-        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume, onCompat = onCompat)
+        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume, onCompat = onCompat, onPrerollStarted = onPrerollStarted, onPrerollError = onPrerollError)
         return
     }
     var infoVisible by remember { mutableStateOf(false) }
@@ -170,6 +178,12 @@ fun PlayerScreen(
     var pictureHeight by remember { mutableIntStateOf(0) }
     var aspectNote by remember { mutableStateOf("") }
     val firstFrame = remember { mutableStateOf(false) }
+    // Message d'attente d'un flux converti : élément en cours et dernier élément dont la première image est affichée.
+    val currentItem = remember { mutableStateOf(clips.indexOfFirst { it.startMs > 0L }.coerceAtLeast(0)) }
+    val framedItem = remember { mutableStateOf(-1) }
+    // Vue vidéo principale (SurfaceView) : gardée ici pour y rebrancher le lecteur à la fin des prérolls (voir la vue TextureView plus bas).
+    val mainView = remember { arrayOfNulls<PlayerView>(1) }
+    val prerollView = remember { arrayOfNulls<PlayerView>(1) }
     var nudge by remember { mutableIntStateOf(0) }
     var bitsPerSecond by remember { mutableLongStateOf(0L) }
     // Diagnostic vidéo (panneau « i ») : décodeur choisi par la TV et nombre de coupures de lecture (tampon vide en cours de film).
@@ -620,6 +634,11 @@ fun PlayerScreen(
                 (if (video.frameRate > 0f) " · %.2f i/s".format(video.frameRate) else "") + hdr
         }
         lines += "Décodeur" to decoderKind(decoderName)
+        lines += "Affichage" to when {
+            prerollView[0]?.player === player -> "TextureView (préroll)"
+            mainView[0]?.player === player -> "SurfaceView"
+            else -> "?"
+        }
         val counters = player.videoDecoderCounters?.also { it.ensureUpdated() }
         lines += "Images" to "affichées ${counters?.renderedOutputBufferCount ?: 0} · perdues ${counters?.droppedBufferCount ?: 0}"
         lines += "Réseau" to "${rateLabel(bitsPerSecond)} · tampon ${player.totalBufferedDuration / 1000} s · coupures $rebuffers"
@@ -700,6 +719,7 @@ fun PlayerScreen(
                 val clip = clips.getOrNull(player.currentMediaItemIndex)
                 player.volume = if (clip?.kind == ClipKind.PREROLL) prerollVolume * prerollVolume else 1f
                 status = clip?.label ?: ""
+                currentItem.value = player.currentMediaItemIndex
                 selection[0] = -1
                 selection[1] = 0
             }
@@ -746,6 +766,22 @@ fun PlayerScreen(
                 )
                 if (clip.kind == ClipKind.FEATURE && decoderTrouble) {
                     onCompat()
+                    return
+                }
+                if (clip.kind == ClipKind.PREROLL) {
+                    // Les coupures de réseau ne mettent pas le fichier de côté : il n'est pas en cause.
+                    val network = error.errorCode in setOf(
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                    )
+                    onPrerollError(clip, !network)
+                    notice = "Erreur preroll, merci de signaler ce message au créateur du logiciel" +
+                        (if (clip.prerollFile.isNotBlank()) "\n${clip.prerollFile}" else "")
+                    if (player.hasNextMediaItem()) {
+                        player.seekToNextMediaItem()
+                        player.prepare()
+                        player.playWhenReady = true
+                    }
                     return
                 }
                 if (clip.kind != ClipKind.FEATURE && player.hasNextMediaItem()) {
@@ -872,8 +908,13 @@ fun PlayerScreen(
 
     // Rapport régulier au serveur pendant le film (le serveur en affiche la session tant qu'il en reçoit).
     LaunchedEffect(player) {
+        val startedPrerolls = mutableSetOf<String>()
         while (true) {
             val clip = clips.getOrNull(player.currentMediaItemIndex)
+            // Préroll séquentiel : compté comme lu dès qu'il démarre.
+            if (clip != null && clip.kind == ClipKind.PREROLL && clip.prerollFile.isNotBlank() && player.isPlaying && startedPrerolls.add(clip.prerollKey)) {
+                onPrerollStarted(clip)
+            }
             if (clip != null && clip.kind == ClipKind.FEATURE && player.playbackState == Player.STATE_READY) {
                 onProgress(clip.ratingKey, if (player.isPlaying) "playing" else "paused", player.currentPosition, player.duration)
             }
@@ -980,7 +1021,7 @@ fun PlayerScreen(
     }
     LaunchedEffect(notice) {
         if (notice.isEmpty()) return@LaunchedEffect
-        delay(if (notice.startsWith("Impossible")) 9000L else 4000L)
+        delay(if (notice.startsWith("Impossible") || notice.startsWith("Erreur preroll")) 9000L else 4000L)
         notice = ""
     }
 
@@ -1088,6 +1129,7 @@ fun PlayerScreen(
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
+                    mainView[0] = this
                     this.player = player
                     useController = false
                     isFocusable = false
@@ -1142,6 +1184,7 @@ fun PlayerScreen(
                     player.addListener(object : Player.Listener {
                         override fun onRenderedFirstFrame() {
                             firstFrame.value = true
+                            framedItem.value = player.currentMediaItemIndex
                             ticks = 0
                         }
 
@@ -1167,6 +1210,52 @@ fun PlayerScreen(
             },
             modifier = Modifier.fillMaxSize().padding(bottom = if (nudge % 2 == 1) 1.dp else 0.dp),
         )
+        // Prérolls en TextureView : l'image passe par la composition graphique de l'appli et non par le plan vidéo de la TV, qui peut
+        // rester coincé en mode Dolby Vision après un film (prérolls zoomés, rayés et violacés). Le film reprend ensuite la vue habituelle.
+        // Retour à la vue habituelle un peu AVANT la fin du préroll (et non au changement d'élément) : le décodeur du film doit
+        // être créé sur la vue habituelle, sinon la TV ne passe pas en Dolby Vision / HDR.
+        val handedOver = remember { mutableIntStateOf(-1) }
+        LaunchedEffect(currentItem.value) {
+            val index = currentItem.value
+            if (!prerollTexture || clips.getOrNull(index)?.kind != ClipKind.PREROLL || clips.getOrNull(index + 1)?.kind == ClipKind.PREROLL) return@LaunchedEffect
+            while (true) {
+                delay(100)
+                if (player.currentMediaItemIndex != index) break
+                val duration = player.duration
+                if (duration > 0L && duration - player.currentPosition in 1L..500L) {
+                    handedOver.intValue = index
+                    break
+                }
+            }
+        }
+        val prerollOnTexture = prerollTexture && clips.getOrNull(currentItem.value)?.kind == ClipKind.PREROLL && handedOver.intValue != currentItem.value
+        AndroidView(
+            factory = { ctx ->
+                (android.view.LayoutInflater.from(ctx).inflate(tv.plexiplay.R.layout.preroll_view, null) as PlayerView).apply {
+                    prerollView[0] = this
+                    useController = false
+                    isFocusable = false
+                    visibility = android.view.View.INVISIBLE
+                }
+            },
+            update = { view ->
+                val main = mainView[0]
+                if (prerollOnTexture) {
+                    if (view.player !== player) {
+                        view.player = player
+                        main?.player = null
+                    }
+                    view.visibility = android.view.View.VISIBLE
+                } else {
+                    if (view.player === player) {
+                        view.player = null
+                        main?.player = player
+                    }
+                    view.visibility = android.view.View.INVISIBLE
+                }
+            },
+            modifier = Modifier.fillMaxSize().padding(bottom = if (nudge % 2 == 1) 1.dp else 0.dp),
+        )
         if (notice.isNotEmpty()) {
             Text(
                 notice,
@@ -1174,6 +1263,9 @@ fun PlayerScreen(
                 fontSize = 18.sp,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 28.dp),
             )
+        }
+        if (!switching && framedItem.value != currentItem.value) {
+            waitMessage(effective(currentItem.value))?.let { WaitOverlay(it, Modifier.align(Alignment.Center)) }
         }
         if (switching) {
             Text(

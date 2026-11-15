@@ -3,11 +3,28 @@ package tv.plexiplay.ui.shell
 import tv.plexiplay.ui.theme.tap
 import tv.plexiplay.ui.theme.tapOrHold
 import tv.plexiplay.ui.theme.isTablet
+import androidx.compose.foundation.horizontalScroll
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.mutableFloatStateOf
+import tv.plexiplay.ui.theme.FutureAmbience
+import tv.plexiplay.ui.theme.FutureSweep
+import tv.plexiplay.ui.theme.futureBeam
+import tv.plexiplay.ui.theme.rememberClickPulse
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,7 +60,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -126,6 +145,9 @@ fun ShellScreen(
     backdrop: android.graphics.Bitmap? = null,
     status: String,
     count: Int = -1,
+    styleActive: Boolean = false,
+    onStyle: (() -> Unit)? = null,
+    onIdea: (() -> Unit)? = null,
     onSelect: (RailEntry) -> Unit,
     onOpen: (Metadata) -> Unit,
     onPane: (LibraryPane) -> Unit,
@@ -135,10 +157,16 @@ fun ShellScreen(
     search: @Composable () -> Unit = {},
 ) {
     var zone by remember { mutableStateOf(Zone.Rail) }
+    // Thème Futuriste : transition « bouton du menu -> colonne de droite » (zoom + déplacement).
+    var flyFrom by remember { mutableStateOf<Rect?>(null) }
+    val flyProgress = remember { Animatable(1f) }
+    val enter = remember { Animatable(1f) }
+    var enterOriginY by remember { mutableFloatStateOf(0f) }
     // Onglet où l'on était avant le dernier changement : Retour y revient.
     var paneBefore by remember { mutableStateOf<LibraryPane?>(null) }
     LaunchedEffect(selectedId) { paneBefore = null }
     val changePane: (LibraryPane) -> Unit = { next ->
+        if (ThemeMode.future) enterOriginY = 70f
         if (next != pane) paneBefore = pane
         onPane(next)
     }
@@ -209,6 +237,7 @@ fun ShellScreen(
             ),
         )
     }
+    FutureAmbience()
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -317,7 +346,11 @@ fun ShellScreen(
                     selected = entry.id == selectedId,
                     requester = if (index == focusIndex) railFocus else null,
                     active = railActive,
-                    onClick = {
+                    onClick = { bounds ->
+                        if (ThemeMode.future) {
+                            flyFrom = bounds
+                            enterOriginY = bounds.center.y
+                        }
                         if (entry.id != selectedId && entry.id != "search" && entry.id != "settings") {
                             loadFrom = pageKey
                             loadingLibrary = true
@@ -331,6 +364,17 @@ fun ShellScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    if (ThemeMode.future) {
+                        val e = enter.value
+                        val k = 0.86f + 0.14f * e
+                        scaleX = k
+                        scaleY = k
+                        alpha = (0.15f + 0.85f * e).coerceIn(0f, 1f)
+                        translationX = -(1f - e) * 90.dp.toPx()
+                        transformOrigin = TransformOrigin(0f, (enterOriginY / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f))
+                    }
+                }
                 .padding(12.dp),
         ) {
             if (isSettings) {
@@ -339,12 +383,24 @@ fun ShellScreen(
                 search()
             } else {
                 if (showTabs) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                        PaneChip("Bibliothèque", pane == LibraryPane.LIBRARY, contentActive) { changePane(LibraryPane.LIBRARY) }
+                    // Mobile : les onglets défilent au doigt s'ils ne tiennent pas sur la largeur.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(bottom = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    ) {
+                        PaneChip("Bibliothèque", pane == LibraryPane.LIBRARY && !styleActive, contentActive) { changePane(LibraryPane.LIBRARY) }
                         if (!isShowLibrary) {
                             PaneChip("Collections", pane == LibraryPane.COLLECTIONS, contentActive) { changePane(LibraryPane.COLLECTIONS) }
                         }
+                        if (onStyle != null) {
+                            PaneChip("Style", styleActive, contentActive) { onStyle() }
+                        }
                         PaneChip("Quoi de neuf", pane == LibraryPane.NEWS, contentActive) { changePane(LibraryPane.NEWS) }
+                        if (!isShowLibrary && onIdea != null) {
+                            // Bouton à part, bien séparé des onglets.
+                            androidx.compose.foundation.layout.Spacer(Modifier.width(if (isTablet()) 36.dp else 12.dp))
+                            PaneChip("Idée film", false, contentActive, idle = Color(0xFF6B4A1E)) { onIdea() }
+                        }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -401,8 +457,9 @@ fun ShellScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(items, key = { it.ratingKey + it.title }) { item ->
+                        itemsIndexed(items, key = { _, it -> it.ratingKey + it.title }) { index, item ->
                             Poster(
+                                appear = index,
                                 item = item,
                                 thumb = thumb,
                                 posters = posters,
@@ -420,6 +477,21 @@ fun ShellScreen(
             }
         }
     }
+    flyFrom?.let { from ->
+        Canvas(Modifier.fillMaxSize()) {
+            val p = flyProgress.value
+            val to = Rect(64.dp.toPx(), 12.dp.toPx(), size.width - 12.dp.toPx(), size.height - 12.dp.toPx())
+            val left = lerp(from.left, to.left, p)
+            val top = lerp(from.top, to.top, p)
+            val right = lerp(from.right, to.right, p)
+            val bottom = lerp(from.bottom, to.bottom, p)
+            val corner = CornerRadius(lerp(8.dp.toPx(), 18.dp.toPx(), p))
+            val fade = (1f - p).coerceIn(0f, 1f)
+            drawRoundRect(Accent.copy(alpha = 0.16f * fade), Offset(left, top), androidx.compose.ui.geometry.Size(right - left, bottom - top), corner)
+            drawRoundRect(Accent.copy(alpha = 0.9f * fade), Offset(left, top), androidx.compose.ui.geometry.Size(right - left, bottom - top), corner, style = Stroke(3.dp.toPx()))
+        }
+    }
+    FutureSweep(pageKey)
     if (loadingLibrary) {
         Text(
             "Chargement…",
@@ -465,6 +537,18 @@ fun ShellScreen(
     }
     LaunchedEffect(restoreToken) {
         if (!restoreKey.isNullOrBlank()) target = restoreKey
+    }
+    // Thème Futuriste : à chaque changement de page, la colonne de droite arrive en zoom depuis le bouton cliqué.
+    LaunchedEffect(pageKey) {
+        if (!ThemeMode.future) return@LaunchedEffect
+        enter.snapTo(0f)
+        enter.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
+    }
+    LaunchedEffect(flyFrom) {
+        if (flyFrom == null) return@LaunchedEffect
+        flyProgress.snapTo(0f)
+        flyProgress.animateTo(1f, tween(580, easing = FastOutSlowInEasing))
+        flyFrom = null
     }
     LaunchedEffect(shelves) {
         val removed = pendingKey ?: return@LaunchedEffect
@@ -531,8 +615,9 @@ private fun ShelfRow(
                 contentPadding = if (ThemeMode.neon) PaddingValues(horizontal = 6.dp, vertical = 6.dp) else PaddingValues(0.dp),
                 modifier = Modifier.padding(top = if (ThemeMode.neon) 0.dp else 6.dp),
             ) {
-                items(shelf.items, key = { it.ratingKey + it.title }) { item ->
+                itemsIndexed(shelf.items, key = { _, it -> it.ratingKey + it.title }) { index, item ->
                     Poster(
+                        appear = index,
                         item = item,
                         thumb = thumb,
                         posters = posters,
@@ -556,8 +641,9 @@ private fun ShelfRow(
 }
 
 @Composable
-private fun PaneChip(label: String, selected: Boolean, active: Boolean, onClick: () -> Unit) {
+private fun PaneChip(label: String, selected: Boolean, active: Boolean, idle: Color = Color(0xFF2A333C), onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val pulse = rememberClickPulse()
     Text(
         label,
         color = if (focused || (selected && ThemeMode.neon)) Ink else Paper,
@@ -565,14 +651,20 @@ private fun PaneChip(label: String, selected: Boolean, active: Boolean, onClick:
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
+            .graphicsLayer {
+                val k = pulse.scale.value
+                scaleX = k
+                scaleY = k
+            }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
+                    pulse.fire()
                     onClick()
                     true
                 } else false
             }
             .focusable()
-            .themedButton(if (selected || focused) Accent else Color(0xFF2A333C), focused)
+            .themedButton(if (selected || focused) Accent else idle, focused)
             .tap { onClick() }
             .padding(horizontal = 14.dp, vertical = 10.dp),
     )
@@ -585,9 +677,11 @@ private fun RailRow(
     selected: Boolean,
     requester: FocusRequester?,
     active: Boolean,
-    onClick: () -> Unit,
+    onClick: (Rect) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val pulse = rememberClickPulse()
     val look = remember(entry.id, entry.title, entry.type) { railLook(entry) }
     val tint = if (ThemeMode.neon && expanded && selected) Ink else if (focused || selected) Accent else Paper
     val ring = if (focused) FocusRing else Color.Transparent
@@ -595,12 +689,19 @@ private fun RailRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .graphicsLayer {
+                val k = pulse.scale.value
+                scaleX = k
+                scaleY = k
+            }
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
             .tap { onClick() }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
-                    onClick()
+                    pulse.fire(1.1f)
+                    onClick(bounds)
                     true
                 } else false
             }
@@ -610,6 +711,7 @@ private fun RailRow(
                     Modifier
                         .padding(bottom = 3.dp)
                         .themedButton(if (selected) Accent else Color(0xFF2A333C), focused, 6.dp)
+                        .futureBeam(focused, 8.dp)
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 } else if (expanded) {
                     Modifier
@@ -679,8 +781,23 @@ internal fun Poster(
     active: Boolean,
     onOpen: () -> Unit,
     onLongPress: ((Rect) -> Unit)? = null,
+    appear: Int = -1,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Thème Futuriste : zoom au clic, grossissement animé au focus, apparition en cascade.
+    val pulse = rememberClickPulse()
+    val focusScale = animateFloatAsState(
+        targetValue = if (ThemeMode.future && focused) 1.12f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow),
+        label = "poster-focus",
+    )
+    val appearAnim = remember(item.ratingKey) { Animatable(if (ThemeMode.future && appear >= 0) 0f else 1f) }
+    LaunchedEffect(item.ratingKey) {
+        if (appearAnim.value < 1f) {
+            delay(if (appear < 30) appear * 30L else (appear % 8) * 30L)
+            appearAnim.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = 170f))
+        }
+    }
     val pressScope = rememberCoroutineScope()
     var pressJob by remember { mutableStateOf<Job?>(null) }
     var pressFired by remember { mutableStateOf(false) }
@@ -711,6 +828,7 @@ internal fun Poster(
                 if (!center) return@onPreviewKeyEvent false
                 if (onLongPress == null) {
                     if (it.type == KeyEventType.KeyUp) {
+                        pulse.fire()
                         onOpen()
                         true
                     } else false
@@ -732,15 +850,26 @@ internal fun Poster(
                         pressJob = null
                         val wasLong = pressFired
                         pressFired = false
-                        if (!wasLong) onOpen()
+                        if (!wasLong) {
+                            pulse.fire()
+                            onOpen()
+                        }
                         true
                     }
                     else -> false
                 }
             }
             .focusable()
+            .then(if (ThemeMode.future && focused) Modifier.zIndex(1f) else Modifier)
             .graphicsLayer {
-                if (ThemeMode.neon && focused) {
+                if (ThemeMode.future) {
+                    val a = appearAnim.value
+                    val k = focusScale.value * pulse.scale.value * (0.55f + 0.45f * a)
+                    scaleX = k
+                    scaleY = k
+                    alpha = a.coerceIn(0f, 1f)
+                    translationY = (1f - a) * 24.dp.toPx()
+                } else if (ThemeMode.neon && focused) {
                     scaleX = 1.07f
                     scaleY = 1.07f
                 }
@@ -795,7 +924,9 @@ internal fun Poster(
                         .padding(vertical = 1.dp),
                 )
             }
-            if (focused) {
+            if (focused && ThemeMode.future) {
+                Box(Modifier.fillMaxSize().border(1.dp, Accent.copy(alpha = 0.7f), RoundedCornerShape(4.dp)).futureBeam(true, 4.dp))
+            } else if (focused) {
                 Box(Modifier.fillMaxSize().border(3.dp, FocusRing, RoundedCornerShape(4.dp)))
             }
         }

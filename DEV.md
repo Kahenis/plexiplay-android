@@ -84,6 +84,14 @@
   - Easter egg : pas de proposition des vidéos d'intros (`IntroVideos.kt` présent, inutilisé).
 - Non repris (propres à la TV) : Box Player, TextureView, réglages Philips, barre de temps à la télécommande, focus après lecture, thème Futuriste, manuels, vidéos d'intros.
 
+## 1.6.1 : reprise des versions TV 1.7.0 à 1.9.0 (lot 2)
+
+- Fusion à trois voies `d0df4b6` → `4feb41b` (même méthode que la 1.6.0).
+- Repris : prérolls séquentiels depuis guilard.com/preroll (réglage « Prérolls », appui long sur le réglage grisé pour le réactiver), message d'attente pendant la conversion (`WaitOverlay`), bouton « Style » (films et séries), « Idée film » (« Idée TV » sur la TV : 5 films non vus au hasard), bouton Trailer sur la fiche d'une série, interrupteur « Sagas » et nombre de films, explications des réglages sur deux lignes.
+- Adaptations mobile : onglets des bibliothèques défilants ; grille des styles adaptative (colonnes de 140 dp sous 900 dp) ; popup « Idée film » défilant, propositions défilant de gauche à droite ; `Chip` des paramètres : appui long au doigt (`tapOrHold`) quand le réglage en prévoit un.
+- Correction (propre au mobile) : `tap` / `tapOrHold` gardaient l'action de la première composition (`pointerInput(Unit)`) ; un réglage à choix ne passait plus à la valeur suivante après le premier toucher. Ils utilisent maintenant `rememberUpdatedState`.
+- Non repris : thème « Futuriste » (choix retiré, code présent mais inactif), prérolls en TextureView et réglage associé (code présent, jamais activé), manuels Utilisation / Réglages (fichiers retirés : textes écrits pour la télécommande), retour du focus après lecture (sans effet au doigt, code présent).
+
 ---
 
 # Notes de développement (Plexiplay clone)

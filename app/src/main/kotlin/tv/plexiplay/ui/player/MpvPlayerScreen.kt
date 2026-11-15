@@ -122,8 +122,11 @@ internal fun MpvPlayerScreen(
     onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
     prerollVolume: Float = 0.75f,
     onCompat: () -> Unit = {},
+    onPrerollStarted: (ClipPlay) -> Unit = {},
+    onPrerollError: (ClipPlay, Boolean) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
+    var userSkipped by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     var audioMenu by remember { mutableStateOf(false) }
     var subMenu by remember { mutableStateOf(false) }
@@ -132,7 +135,7 @@ internal fun MpvPlayerScreen(
     val pickedSub = remember { mutableMapOf<Int, Int>() }
     LaunchedEffect(notice) {
         if (notice.isNotEmpty()) {
-            delay(4000)
+            delay(if (notice.startsWith("Erreur preroll")) 9000L else 4000L)
             notice = ""
         }
     }
@@ -165,6 +168,8 @@ internal fun MpvPlayerScreen(
         onDispose { onRegisterBack(null) }
     }
     LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
+    // Message d'attente d'un flux converti : tant qu'il n'y a ni image ni temps de lecture.
+    var waitText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(screen) {
         val view = screen ?: return@LaunchedEffect
         val added = mutableSetOf<Int>()
@@ -175,6 +180,9 @@ internal fun MpvPlayerScreen(
             val pos = core?.get(MpvProperties.PlaylistPos)?.getOrNull()?.toInt() ?: 0
             val tracks = core?.get(MpvProperties.TrackList)?.getOrNull().orEmpty()
             val clip = clips.getOrNull(pos)
+            val waiting = clip != null && clip.kind == ClipKind.FEATURE && !clip.direct && core != null &&
+                ((core.get(MpvProperties.Width).getOrNull()?.toInt() ?: 0) <= 0 || (core.get(MpvProperties.TimePos).getOrNull() ?: 0.0) <= 0.0)
+            waitText = if (waiting) waitMessage(clip) else null
             val sign = "$pos:${tracks.size}:${tracks.firstOrNull()?.id}:${clip?.subtitleUrl}"
             if (clip != null) {
                 // Volume d'un preroll : réduit ; le film et les bandes-annonces gardent 100 %.
@@ -201,11 +209,30 @@ internal fun MpvPlayerScreen(
         var noPicture = 0
         var nothingYet = 0
         var fallbackDone = false
+        // Préroll séquentiel : compté comme lu dès qu'il démarre ; si mpv passe au suivant sans l'avoir lu, il est en erreur.
+        var watchedIndex = -1
+        var watchedPlayed = 0L
+        val startedPrerolls = mutableSetOf<String>()
         while (true) {
             val core = view.mpv
             if (core != null) {
                 val pos = core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: 0
                 val clip = clips.getOrNull(pos)
+                if (pos != watchedIndex) {
+                    val before = clips.getOrNull(watchedIndex)
+                    if (before != null && before.kind == ClipKind.PREROLL && before.prerollFile.isNotBlank() && watchedPlayed <= 0L && !userSkipped) {
+                        onPrerollError(before, true)
+                        notice = "Erreur preroll, merci de signaler ce message au créateur du logiciel\n${before.prerollFile}"
+                    }
+                    userSkipped = false
+                    watchedIndex = pos
+                    watchedPlayed = 0L
+                }
+                if (clip != null && clip.kind == ClipKind.PREROLL) {
+                    val playedNow = ((core[MpvProperties.TimePos].getOrNull() ?: 0.0) * 1000).toLong()
+                    if (playedNow > watchedPlayed) watchedPlayed = playedNow
+                    if (playedNow > 0L && clip.prerollFile.isNotBlank() && startedPrerolls.add(clip.prerollKey)) onPrerollStarted(clip)
+                }
                 if (clip != null && clip.kind == ClipKind.FEATURE && !fallbackDone) {
                     val shownWidth = core[MpvProperties.Width].getOrNull()?.toInt() ?: 0
                     val playedMs = ((core[MpvProperties.TimePos].getOrNull() ?: 0.0) * 1000).toLong()
@@ -599,6 +626,7 @@ internal fun MpvPlayerScreen(
                 it.destroy()
             },
         )
+        waitText?.let { WaitOverlay(it, Modifier.align(Alignment.Center)) }
         if (notice.isNotEmpty()) {
             Text(
                 notice,
@@ -720,6 +748,7 @@ internal fun MpvPlayerScreen(
                         reveal()
                     }
                     PlayerIcon(Glyph.Skip) {
+                        userSkipped = true
                         screen?.mpv?.command(MpvCommands.playlistNext())
                         reveal()
                     }

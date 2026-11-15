@@ -40,6 +40,16 @@ fun Modifier.themedButton(fill: Color, focused: Boolean, radius: Dp = 6.dp): Mod
             cornerRadius = r,
         )
         drawRoundRect(Color.White.copy(alpha = 0.30f), size = size, cornerRadius = r, style = Stroke(1.dp.toPx()))
+        if (focused && ThemeMode.future) {
+            val pad = 4.dp.toPx()
+            drawRoundRect(
+                ring.copy(alpha = 0.28f),
+                topLeft = Offset(-pad, -pad),
+                size = Size(size.width + 2 * pad, size.height + lift + 2 * pad),
+                cornerRadius = CornerRadius(r.x + pad),
+                style = Stroke(pad * 1.5f),
+            )
+        }
         if (focused) {
             drawRoundRect(ring, size = Size(size.width, size.height + lift), cornerRadius = r, style = Stroke(2.dp.toPx()))
         }

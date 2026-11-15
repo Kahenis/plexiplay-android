@@ -179,6 +179,12 @@ data class ServerSetting(
 data class DirectoryBox(val Directory: List<LibrarySection> = emptyList())
 
 @Serializable
+data class GenreEntry(val key: String = "", val title: String = "")
+
+@Serializable
+data class GenreBox(val Directory: List<GenreEntry> = emptyList())
+
+@Serializable
 data class MetadataBox(val Metadata: List<Metadata> = emptyList())
 
 @Serializable

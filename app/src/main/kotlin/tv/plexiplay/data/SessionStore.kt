@@ -79,6 +79,8 @@ class SessionStore(context: Context) {
         audioBoost = prefs.getInt("audio_boost", 100),
         convertTitles = prefs.getStringSet("convert_titles", emptySet()).orEmpty().toSet(),
         boxFullHd = prefs.getBoolean("box_fullhd", false),
+        prerollMode = if (prefs.getBoolean("preroll_locked", false)) "random" else prefs.getString("preroll_mode", "sequential") ?: "sequential",
+        prerollLocked = prefs.getBoolean("preroll_locked", false),
         formatFix = prefs.getBoolean(KEY_FORMAT_FIX, true),
         compat = prefs.getString(KEY_COMPAT, "auto") == "on",
         compatTitles = if ((prefs.getString(KEY_COMPAT, "auto") ?: "auto") == "auto") {
@@ -147,11 +149,43 @@ class SessionStore(context: Context) {
             .putLong("preroll_pause_until", 0L).apply()
     }
 
+    fun setPrerollLocked(locked: Boolean) {
+        prefs.edit().putBoolean("preroll_locked", locked).apply()
+    }
+
+    /** Prérolls séquentiels : nom du dernier fichier lu sur cette TV. */
+    fun prerollLast(): String = prefs.getString("preroll_last", "") ?: ""
+
+    fun setPrerollLast(name: String) {
+        prefs.edit().putString("preroll_last", name).apply()
+    }
+
+    /** Prérolls séquentiels : fichiers (nom|signature) qui n'ont pas pu être lus sur cette TV ; ils ne sont plus proposés. */
+    fun prerollBad(): Set<String> = prefs.getStringSet("preroll_bad", emptySet()).orEmpty().toSet()
+
+    fun addPrerollBad(key: String) {
+        prefs.edit().putStringSet("preroll_bad", prerollBad() + key).apply()
+    }
+
     /** Volume des prerolls (annonces avant le film), de 20 à 100 %, 75 % par défaut. */
     fun prerollVolume(): Int = prefs.getInt("preroll_volume", 75).coerceIn(20, 100)
 
     fun savePrerollVolume(value: Int) {
         prefs.edit().putInt("preroll_volume", value.coerceIn(20, 100)).apply()
+    }
+
+    /** Prérolls affichés dans une vue TextureView (anciennes TV, TV Philips) : non par défaut (affichage habituel). */
+    fun prerollTexture(): Boolean = prefs.getBoolean("preroll_texture", false)
+
+    fun savePrerollTexture(value: Boolean) {
+        prefs.edit().putBoolean("preroll_texture", value).apply()
+    }
+
+    /** Interrupteur « Sagas » des bibliothèques de films : affiche de la saga à la place de ses films (éteint par défaut). */
+    fun sagaMode(): Boolean = prefs.getBoolean("saga_mode", false)
+
+    fun saveSagaMode(value: Boolean) {
+        prefs.edit().putBoolean("saga_mode", value).apply()
     }
 
     fun theme(): String = prefs.getString("theme", "classic") ?: "classic"
@@ -174,6 +208,8 @@ class SessionStore(context: Context) {
             .putBoolean(KEY_FORMAT_FIX, settings.formatFix)
             .putInt("audio_boost", settings.audioBoost)
             .putBoolean("box_fullhd", settings.boxFullHd)
+            .putString("preroll_mode", settings.prerollMode)
+            .putBoolean("preroll_locked", settings.prerollLocked)
             .apply()
         if (settings.compatMode != "auto") prefs.edit().remove(KEY_COMPAT_TITLES).apply()
     }

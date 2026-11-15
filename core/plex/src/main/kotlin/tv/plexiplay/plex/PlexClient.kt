@@ -15,6 +15,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.Buffer
 import tv.plexiplay.plex.model.DirectoryBox
+import tv.plexiplay.plex.model.GenreBox
+import tv.plexiplay.plex.model.GenreEntry
 import tv.plexiplay.plex.model.LibrarySection
 import tv.plexiplay.plex.model.Metadata
 import tv.plexiplay.plex.model.MetadataBox
@@ -219,6 +221,32 @@ class PlexClient(
     fun items(server: ServerEndpoint, sectionKey: String): List<Metadata> {
         val raw = get("${server.uri}/library/sections/$sectionKey/all", server.accessToken)
         return metadataList(raw)
+    }
+
+    /**
+     * Bibliothèque avec ses collections (sagas) : le serveur applique lui-même le mode de chaque collection (réglage Plex « masquer les éléments
+     * de la collection ») et renvoie l'affiche de la saga à la place des films concernés.
+     */
+    fun itemsWithCollections(server: ServerEndpoint, sectionKey: String): List<Metadata> =
+        metadataList(get("${server.uri}/library/sections/$sectionKey/all?includeCollections=1", server.accessToken))
+
+    /** Nombre total d'éléments d'une bibliothèque (films, sagas non comptées), par une demande qui ne renvoie aucun élément ; -1 si le serveur ne l'indique pas. */
+    fun totalSize(server: ServerEndpoint, sectionKey: String): Int = runCatching {
+        val raw = get(sized("${server.uri}/library/sections/$sectionKey/all", 0), server.accessToken)
+        json.parseToJsonElement(raw).jsonObject["MediaContainer"]?.jsonObject?.get("totalSize")?.jsonPrimitive?.intOrNull ?: -1
+    }.getOrDefault(-1)
+
+    /** Styles (genres) réellement présents dans une bibliothèque de films. */
+    fun genres(server: ServerEndpoint, sectionKey: String): List<GenreEntry> =
+        json.decodeFromString(Wrapped.serializer(GenreBox.serializer()), get("${server.uri}/library/sections/$sectionKey/genre", server.accessToken))
+            .MediaContainer?.Directory.orEmpty()
+            .filter { it.key.isNotBlank() && it.title.isNotBlank() }
+
+    /** Films d'une bibliothèque appartenant à un style (une ou plusieurs clés Plex, en OU) ; [size] limite la liste. */
+    fun itemsByGenre(server: ServerEndpoint, sectionKey: String, genreKeys: List<String>, size: Int = 0): List<Metadata> {
+        val keys = genreKeys.joinToString(",") { java.net.URLEncoder.encode(it, Charsets.UTF_8.name()) }
+        val url = "${server.uri}/library/sections/$sectionKey/all?genre=$keys"
+        return metadataList(get(if (size > 0) sized(url, size) else url, server.accessToken))
     }
 
     fun children(server: ServerEndpoint, ratingKey: String): List<Metadata> {

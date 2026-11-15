@@ -1,5 +1,6 @@
 package tv.plexiplay.ui.settings
 import tv.plexiplay.ui.theme.tap
+import tv.plexiplay.ui.theme.tapOrHold
 
 import tv.plexiplay.ui.theme.screenBackground
 import tv.plexiplay.ui.theme.themedButton
@@ -87,6 +88,8 @@ fun SettingsScreen(
     onPrerollVolume: (Int) -> Unit = {},
     inviteStatus: String = "",
     onCheckInvites: () -> Unit = {},
+    prerollTexture: Boolean = false,
+    onPrerollTexture: (Boolean) -> Unit = {},
 ) {
     var volumeOpen by remember { mutableStateOf(false) }
     var prerollOpen by remember { mutableStateOf(false) }
@@ -127,17 +130,20 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("Paramètres", color = Paper, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
-                    if (accountName.isNotBlank()) {
-                        Text(
-                            " - $accountName",
-                            color = Color(0xFF9AA3AD),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(bottom = 1.dp),
-                        )
+                // À droite du titre : les manuels (en retrait, pour laisser la place à l'heure en haut à droite).
+                Row(Modifier.fillMaxWidth().padding(end = 100.dp), verticalAlignment = Alignment.Bottom) {
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+                        Text("Paramètres", color = Paper, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+                        if (accountName.isNotBlank()) {
+                            Text(
+                                " - $accountName",
+                                color = Color(0xFF9AA3AD),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 1.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -183,7 +189,7 @@ fun SettingsScreen(
                         Chip("Bibliothèques affichées", onClick = onLibraries)
                     }
                     val labels = mapOf("auto" to "Automatique", "on" to "Activé", "off" to "Désactivé")
-                    Hinted("Si une vidéo bloque (écran noir), l'appli lit l'image en HDR10 et convertit le son. Automatique : elle bascule seule.") {
+                    Hinted("Si une vidéo bloque (écran noir), lecture en HDR10 avec conversion du son. Automatique : bascule seule. Évite aussi, sur certaines TV, les prérolls abîmés après un film Dolby Vision.") {
                         Cycle("Mode compatible", labels[settings.compatMode] ?: "Automatique", labels.values.toList()) {
                             val mode = labels.entries.firstOrNull { e -> e.value == it }?.key ?: "auto"
                             onChange(settings.copy(compatMode = mode, compat = mode == "on"))
@@ -212,13 +218,38 @@ fun SettingsScreen(
             }
             item {
                 Group("CONFORT") {
+                    // Mobile : pas de thème « Futuriste » (effets pensés pour la télécommande).
                     Hinted("Apparence de l'application : classique, ou « Néon » avec boutons en relief.") {
-                        Cycle("Thème", if (theme == "neon") "Néon" else "Classique", listOf("Classique", "Néon")) {
+                        Cycle(
+                            "Thème",
+                            if (theme == "neon") "Néon" else "Classique",
+                            listOf("Classique", "Néon"),
+                        ) {
                             onTheme(if (it == "Néon") "neon" else "classic")
                         }
                     }
                     Hinted("Musique de générique des fiches de saisons et d'épisodes (0 à 60 %).") {
                         Chip("Volume du générique : " + (if (themeVolume == 0) "muet" else "$themeVolume %")) { volumeOpen = true }
+                    }
+                    Hinted(
+                        if (settings.prerollLocked) {
+                            "Dossier des prérolls introuvable : les prérolls du serveur Plex sont utilisés."
+                        } else {
+                            "Séquentiel externe : un préroll différent à chaque film, dans l'ordre, puis retour au premier. Aléatoire serveur : choisis par le serveur Plex."
+                        },
+                    ) {
+                        Cycle(
+                            "Prérolls",
+                            if (settings.prerollMode == "random") "Aléatoire serveur" else "Séquentiel externe",
+                            listOf("Séquentiel externe", "Aléatoire serveur"),
+                            dimmed = settings.prerollLocked,
+                            // Appui long sur le réglage grisé : le réactive (fonction volontairement non documentée).
+                            onLongPress = if (settings.prerollLocked) {
+                                { onChange(settings.copy(prerollMode = "sequential", prerollLocked = false)) }
+                            } else null,
+                        ) {
+                            onChange(settings.copy(prerollMode = if (it == "Aléatoire serveur") "random" else "sequential"))
+                        }
                     }
                     Hinted("Volume des annonces avant le film (20 à 100 %). Le film garde son volume normal.") {
                         Chip("Volume des prerolls : $prerollVolume %") { prerollOpen = true }
@@ -338,11 +369,13 @@ private fun Hinted(hint: String, content: @Composable () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             content()
+            // Jusqu'à deux lignes, puis « … ».
             Text(
                 hint,
                 color = Color(0xFF9AA3AD),
                 fontSize = 12.sp,
-                maxLines = 1,
+                lineHeight = 14.sp,
+                maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
@@ -351,28 +384,39 @@ private fun Hinted(hint: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Cycle(label: String, value: String, options: List<String>, requester: FocusRequester? = null, onPick: (String) -> Unit) {
-    Chip("$label : $value", requester = requester) {
-        if (options.isEmpty()) return@Chip
+private fun Cycle(
+    label: String,
+    value: String,
+    options: List<String>,
+    requester: FocusRequester? = null,
+    dimmed: Boolean = false,
+    onLongPress: (() -> Unit)? = null,
+    onPick: (String) -> Unit,
+) {
+    Chip("$label : $value", requester = requester, dimmed = dimmed, onLongPress = onLongPress) {
+        if (options.isEmpty() || dimmed) return@Chip
         val next = options[(options.indexOf(value) + 1).mod(options.size)]
         onPick(next)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+/** Petit bouton discret (manuels) : sobre au repos, aux couleurs du thème quand il a le focus. */
 @Composable
-private fun Chip(label: String, primary: Boolean = false, requester: FocusRequester? = null, tint: Color? = null, onClick: () -> Unit) {
+private fun Chip(label: String, primary: Boolean = false, requester: FocusRequester? = null, tint: Color? = null, dimmed: Boolean = false, onLongPress: (() -> Unit)? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    var longDone by remember { mutableStateOf(false) }
     val bring = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
     val fill = when {
+        dimmed -> IdleButton
         primary -> Signal
         focused -> Accent
         else -> IdleButton
     }
     Text(
         label,
-        color = if (primary || focused) Ink else (tint ?: Paper),
+        color = if (dimmed) Color(0xFF6B7480) else if (primary || focused) Ink else (tint ?: Paper),
         fontSize = 14.sp,
         modifier = Modifier
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
@@ -382,12 +426,28 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
                 if (it.isFocused) scope.launch { bring.bringIntoView() }
             }
             .onKeyEvent {
-                if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
-                    onClick()
+                val ok = it.key == Key.DirectionCenter || it.key == Key.Enter
+                if (!ok) {
+                    false
+                } else if (it.type == KeyEventType.KeyDown) {
+                    // Appui long (si le bouton en prévoit un) : déclenché une seule fois, le relâchement ne valide rien.
+                    if (onLongPress != null) {
+                        if (it.nativeKeyEvent.isLongPress && !longDone) {
+                            longDone = true
+                            onLongPress()
+                        }
+                        true
+                    } else false
+                } else if (it.type == KeyEventType.KeyUp) {
+                    if (longDone) {
+                        longDone = false
+                    } else {
+                        onClick()
+                    }
                     true
                 } else false
             }
-            .tap { onClick() }
+            .then(if (onLongPress != null) Modifier.tapOrHold(onTap = onClick, onHold = onLongPress) else Modifier.tap { onClick() })
             .focusable()
             .themedButton(fill, focused)
             .padding(horizontal = 12.dp, vertical = 9.dp),
