@@ -9,6 +9,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -59,7 +60,10 @@ class PlexClient(
     }
 
     /** Nom affiché du compte Plex (profil, sinon identifiant, sinon adresse e-mail) ; null si indisponible. */
-    fun accountName(token: String): String? = runCatching {
+    fun accountName(token: String): String? = account(token)?.name
+
+    /** Nom et identifiant numérique plex.tv du compte connecté (l'identifiant sert de base à la note Plexiplay, voir Votes.kt). */
+    fun account(token: String): PlexAccount? = runCatching {
         val quick = http.newBuilder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build()
         val request = Request.Builder().url("https://plex.tv/api/v2/user").get()
             .let { PlexHeaders.apply(it, clientId, token, deviceName) }
@@ -70,9 +74,11 @@ class PlexClient(
             response.body?.string().orEmpty()
         }
         val obj = json.parseToJsonElement(raw).jsonObject
-        listOf("title", "friendlyName", "username", "email")
+        val name = listOf("title", "friendlyName", "username", "email")
             .mapNotNull { obj[it]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { v -> v.isNotBlank() } }
-            .firstOrNull()
+            .firstOrNull().orEmpty()
+        val id = obj["id"]?.jsonPrimitive?.longOrNull ?: return@runCatching null
+        PlexAccount(id, name)
     }.getOrNull()
 
     /** Invitations reçues (demande d'ami, partage de bibliothèques). Vide s'il n'y en a pas. */
@@ -581,6 +587,9 @@ class PlexClient(
 
 /** Réponse d'erreur de Plex ou du serveur : 401 = session ou jeton refusé. Le message reste « Plex <code> ». */
 class PlexHttpException(val code: Int) : IOException("Plex $code")
+
+/** Identifiant plex.tv stable du compte connecté (sert de base, une fois haché, à la note Plexiplay — voir Votes.kt). */
+data class PlexAccount(val id: Long, val name: String)
 
 data class PlexInvite(
     val id: String,

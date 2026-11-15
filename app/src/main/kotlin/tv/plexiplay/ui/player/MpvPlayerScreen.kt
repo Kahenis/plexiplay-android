@@ -217,11 +217,23 @@ internal fun MpvPlayerScreen(
         var watchedIndex = -1
         var watchedPlayed = 0L
         val startedPrerolls = mutableSetOf<String>()
+        // Bande-annonce seule (bouton « Trailer ») : dès qu'elle a commencé puis s'est terminée, retour à la fiche ou à la bande de choix.
+        val trailersOnly = clips.isNotEmpty() && clips.all { it.kind == ClipKind.TRAILER }
+        var trailerStarted = false
         while (true) {
             val core = view.mpv
             if (core != null) {
                 val pos = core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: 0
                 val clip = clips.getOrNull(pos)
+                if (trailersOnly) {
+                    val playedNow = ((core[MpvProperties.TimePos].getOrNull() ?: 0.0) * 1000).toLong()
+                    if (playedNow > 0L) trailerStarted = true
+                    val finished = core.getString("eof-reached") == "yes" || core.getString("idle-active") == "yes"
+                    if (trailerStarted && finished && pos >= clips.lastIndex) {
+                        onExit()
+                        return@LaunchedEffect
+                    }
+                }
                 if (pos != watchedIndex) {
                     val before = clips.getOrNull(watchedIndex)
                     if (before != null && before.kind == ClipKind.PREROLL && before.prerollFile.isNotBlank() && watchedPlayed <= 0L && !userSkipped) {

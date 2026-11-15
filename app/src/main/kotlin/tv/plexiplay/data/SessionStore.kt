@@ -27,13 +27,18 @@ class SessionStore(context: Context) {
     fun saveToken(token: String) = prefs.edit().putString(KEY_TOKEN, token).apply()
 
     fun clearSession() {
-        prefs.edit().remove(KEY_TOKEN).remove(KEY_SERVERS).remove(KEY_SERVER).remove("account_name").apply()
+        prefs.edit().remove(KEY_TOKEN).remove(KEY_SERVERS).remove(KEY_SERVER).remove("account_name").remove("account_id").apply()
     }
 
     /** Nom du compte Plex affiché dans les paramètres (mémorisé pour l'afficher tout de suite). */
     fun accountName(): String = prefs.getString("account_name", "").orEmpty()
 
     fun saveAccountName(name: String) = prefs.edit().putString("account_name", name).apply()
+
+    /** Identifiant plex.tv du compte connecté : base (hachée) du votant pour la note Plexiplay. 0 si inconnu. */
+    fun accountId(): Long = prefs.getLong("account_id", 0L)
+
+    fun saveAccountId(id: Long) = prefs.edit().putLong("account_id", id).apply()
 
     fun servers(): List<ServerEndpoint> {
         val raw = prefs.getString(KEY_SERVERS, null) ?: return emptyList()

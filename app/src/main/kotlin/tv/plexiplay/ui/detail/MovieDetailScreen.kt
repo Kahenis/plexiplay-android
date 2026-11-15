@@ -101,6 +101,7 @@ fun MovieDetailScreen(
     themeVolume: Float = 0.5f,
     posters: tv.plexiplay.ui.shell.PosterStore? = null,
     accountToken: String = "",
+    voter: String = "",
 ) {
     val context = LocalContext.current
     // Téléphone en portrait : une colonne qui défile, boutons qui passent à la ligne.
@@ -163,6 +164,17 @@ fun MovieDetailScreen(
     var trailerUrl by remember(seed.ratingKey) { mutableStateOf<String?>(null) }
     var themeUrl by remember(seed.ratingKey) { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf("") }
+    // Panneau « Votre note » ouvert par le bouton « ★ Noter », et la moyenne Plexiplay de tous les utilisateurs pour ce titre.
+    var rating by remember(seed.ratingKey) { mutableStateOf(false) }
+    var community by remember(seed.ratingKey) { mutableStateOf<tv.plexiplay.plex.votes.CommunityRating?>(null) }
+    // « Écrire un avis » (depuis le panneau de note) et le popup des avis courts (clic sur les étoiles de la fiche).
+    var reviewStars by remember(seed.ratingKey) { mutableStateOf<Int?>(null) }
+    var reviewsOpen by remember(seed.ratingKey) { mutableStateOf(false) }
+    var reviews by remember(seed.ratingKey) { mutableStateOf<List<tv.plexiplay.plex.votes.Review>>(emptyList()) }
+    LaunchedEffect(movie.ratingKey, voter) {
+        val fetched = withContext(Dispatchers.IO) { runCatching { PlexiStars.fetch(movie, voter) }.getOrNull() }
+        if (fetched != null) community = fetched
+    }
     val resolutionChoices = MovieFacts.resolutionChoices(movie)
     val audioChoices = MovieFacts.audioChoicesLabeled(movie)
     val subtitleChoices = MovieFacts.subtitleOptions(movie)
@@ -278,7 +290,7 @@ fun MovieDetailScreen(
             .futureEntrance()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
-                    if (summaryOpen) summaryOpen = false else if (actor != null) actor = null else if (menu != null) menu = null else onClose()
+                    if (reviewsOpen) reviewsOpen = false else if (reviewStars != null) reviewStars = null else if (rating) rating = false else if (summaryOpen) summaryOpen = false else if (actor != null) actor = null else if (menu != null) menu = null else onClose()
                     true
                 } else false
             },
@@ -355,12 +367,18 @@ fun MovieDetailScreen(
                 if (genres.isNotBlank()) {
                     Text(genres, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
                 }
-                Text(
-                    "${MovieFacts.imdb(movie)}    ${MovieFacts.audience(movie)}    ${MovieFacts.stars(movie)}",
-                    color = Paper,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${MovieFacts.imdb(movie)}    ${MovieFacts.audience(movie)}    ", color = Paper, fontSize = 15.sp)
+                    PlexiStarsRow(community) {
+                        val target = movie
+                        reviews = emptyList()
+                        reviewsOpen = true
+                        Thread {
+                            val fetched = runCatching { PlexiStars.reviews(target) }.getOrDefault(emptyList())
+                            android.os.Handler(android.os.Looper.getMainLooper()).post { reviews = fetched }
+                        }.start()
+                    }
+                }
                 Text(
                     movie.summary.ifBlank { "Résumé indisponible." },
                     color = Color(0xFFD5DBE2),
@@ -394,10 +412,63 @@ fun MovieDetailScreen(
                         modifier = Modifier.padding(top = 12.dp),
                     )
                 }
-                if (notice.isNotBlank() || note.isNotBlank()) {
-                    Text(notice.ifBlank { note }, color = Color(0xFF9AA3AD), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-                }
             }
+        }
+        // Message (« Aucune bande-annonce… », statut non enregistré) : juste au-dessus des boutons, toujours visible,
+        // et non en bas de la colonne de texte où le résumé et les acteurs le poussaient hors de l'écran.
+        if (notice.isNotBlank() || note.isNotBlank()) {
+            Text(
+                notice.ifBlank { note },
+                color = Color(0xFFFFB454),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = if (compact) 16.dp else 36.dp, end = 16.dp, bottom = barHeight + 4.dp),
+            )
+        }
+        if (rating) {
+            RateDialog(
+                current = community?.mine ?: 0,
+                onClose = { rating = false },
+                onWriteReview = { stars ->
+                    rating = false
+                    reviewStars = stars
+                },
+                onRate = { stars ->
+                    rating = false
+                    val target = movie
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, stars) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        val openReview = reviewStars
+        if (openReview != null) {
+            ReviewDialog(
+                initial = community?.myReview.orEmpty(),
+                stars = openReview,
+                onCancel = { reviewStars = null },
+                onValidate = { text ->
+                    reviewStars = null
+                    val target = movie
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        if (reviewsOpen) {
+            ReviewsPopup(reviews = reviews, onClose = { reviewsOpen = false })
         }
         val leftBar: @Composable () -> Unit = {
             if (movie.viewOffset >= 30_000L) {
@@ -409,6 +480,7 @@ fun MovieDetailScreen(
                 Action("Lecture", playFocus, primary = true) { onPlay(movie, resolution, audio, subtitles, false) }
             }
             if (movie.type != "episode") Action("🎬 Trailer") { onTrailers(movie) }
+            if (movie.type != "episode") Action("★ Noter") { rating = true }
             Action(if (watched) "Marqué lu" else "Marquer lu") {
                 val next = !watched
                 watched = next

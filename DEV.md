@@ -100,6 +100,12 @@
 - Adaptations mobile : barre de temps tactile du mobile conservée (la `SeekBar` télécommande de la TV n'est pas reprise, fichier retiré) ; bouton « Passer… » touchable, sans « · OK », placé au-dessus de la barre de commandes ; fiche du titre limitée à la largeur de l'écran ; écran « Réessayer » : boutons touchables, largeur adaptée ; textes d'aide des paramètres à 12 sp.
 - Non repris : cadre « TV Philips et équivalent » / « Correctif Dolby Vision » (masqué ; code présent), adaptation de la fréquence d'image (code présent, jamais activé).
 
+## 1.6.3 : reprise des versions TV 1.9.2.1 à 1.9.2.4 (lot 4)
+
+- Fusion à trois voies `cebe852` → `eda1cbc`.
+- Repris : bande de choix des bandes-annonces (`TrailerPicker.kt`, une seule = lecture directe), étoiles « Plexiplay » (note commune à tous les utilisateurs via `votes.php` sur guilard.com, `VotesClient`), bouton « ★ Noter » (fiche film et série), avis courts (200 caractères) et liste des avis en touchant les étoiles ; message de la fiche affiché au-dessus des boutons.
+- Adaptations mobile : `RateDialog` : étoiles touchables, boutons Valider / Écrire un avis / Annuler, toucher à côté = fermer ; `ReviewDialog` : clavier du téléphone (`BasicTextField`, 200 caractères, `imePadding`) au lieu du clavier virtuel de la TV ; `ReviewsPopup` : bouton Fermer, toucher à côté = fermer, cartes limitées à 72 % de la largeur ; Recherche : clavier du téléphone conservé (`Keyboard.kt` présent, inutilisé) ; message de la fiche placé juste au-dessus de la barre de boutons mesurée.
+
 ---
 
 # Notes de développement (Plexiplay clone)

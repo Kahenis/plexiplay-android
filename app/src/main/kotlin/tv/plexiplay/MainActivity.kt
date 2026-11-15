@@ -49,6 +49,9 @@ import tv.plexiplay.ui.boot.BootScreen
 import tv.plexiplay.ui.detail.MovieDetailScreen
 import tv.plexiplay.ui.detail.MovieFacts
 import tv.plexiplay.ui.detail.SeriesScreen
+import tv.plexiplay.ui.detail.TrailerOption
+import tv.plexiplay.ui.detail.TrailerStrip
+import tv.plexiplay.ui.detail.trailerLanguage
 import tv.plexiplay.ui.player.AudioChoice
 import tv.plexiplay.ui.player.SubChoice
 import tv.plexiplay.ui.player.ClipPlay
@@ -153,16 +156,21 @@ private fun App(
     PrerollFolder.store = store
     var token by remember { mutableStateOf(store.token()) }
     var accountName by remember { mutableStateOf(store.accountName()) }
+    // Identifiant plex.tv du compte connecté, haché pour servir de votant à la note Plexiplay (VotesClient) — jamais son nom ni son jeton.
+    var accountId by remember { mutableStateOf(store.accountId()) }
+    val voter = remember(accountId) { if (accountId > 0L) tv.plexiplay.plex.votes.VotesClient.voterHash(accountId) else "" }
     LaunchedEffect(token) {
         val current = token
         if (current.isNullOrBlank()) {
             accountName = ""
+            accountId = 0L
             return@LaunchedEffect
         }
-        val name = withContext(Dispatchers.IO) { client.accountName(current) }
-        if (!name.isNullOrBlank()) {
-            store.saveAccountName(name)
-            accountName = name
+        val account = withContext(Dispatchers.IO) { client.account(current) }
+        if (account != null) {
+            if (account.name.isNotBlank()) { store.saveAccountName(account.name); accountName = account.name }
+            store.saveAccountId(account.id)
+            accountId = account.id
         }
     }
     var servers by remember { mutableStateOf(store.servers()) }
@@ -204,6 +212,9 @@ private fun App(
     var inviteBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choisissez une catégorie") }
     var clips by remember { mutableStateOf<List<ClipPlay>?>(null) }
+    // Bande de choix des bandes-annonces (plusieurs disponibles), et celle à rouvrir quand la bande-annonce lancée depuis elle se termine.
+    var trailerPick by remember { mutableStateOf<List<TrailerOption>?>(null) }
+    var trailerReturn by remember { mutableStateOf<List<TrailerOption>?>(null) }
     var episodeRun by remember { mutableStateOf<EpisodeRun?>(null) }
     // Dernier lancement depuis la page d'un film : de quoi relancer le film (changement de piste en flux converti).
     var lastPlay by remember { mutableStateOf<Triple<Metadata, String, Boolean>?>(null) }
@@ -255,10 +266,19 @@ private fun App(
             startupOffer != null && clips == null && updateStatus != "Téléchargement…" -> startupOffer = null
             pendingInvites != null -> if (!inviteBusy) pendingInvites = null
             confirm != null -> confirm = null
+            trailerPick != null && clips == null -> trailerPick = null
             ideaOpen && clips == null && movie == null && series == null && confirm == null -> ideaOpen = false
             stylePicker -> stylePicker = false
             picker -> picker = false
-            clips != null -> if (playerBack.value?.invoke() != true) clips = null
+            clips != null -> if (playerBack.value?.invoke() != true) {
+                clips = null
+                // Retour pendant une bande-annonce choisie dans la bande : la bande se rouvre.
+                val back = trailerReturn
+                if (back != null) {
+                    trailerReturn = null
+                    trailerPick = back
+                }
+            }
             episodeOpen != null -> episodeOpen = null
             seasonOpen != null -> seasonOpen = null
             series != null -> {
@@ -865,6 +885,22 @@ private fun App(
     )
     val opened = movie
     val activeServer = server
+    // Bouton « Trailer » (film, série, Idée TV) : aucune → message ; une seule → lue tout de suite ; plusieurs → bande de choix.
+    val openTrailers: (Metadata, () -> Unit) -> Unit = { feature, onNone ->
+        val active = server
+        if (active != null) {
+            Thread {
+                val options = runCatching { trailerQueue(client, active, feature, settings, store.clientId()) }.getOrDefault(emptyList())
+                runOnUi {
+                    when {
+                        options.isEmpty() -> onNone()
+                        options.size == 1 -> { trailerReturn = null; clips = listOf(options.first().clip) }
+                        else -> trailerPick = options
+                    }
+                }
+            }.start()
+        }
+    }
     if (opened != null && activeServer != null && clips == null) {
         MovieDetailScreen(
             seed = opened,
@@ -892,16 +928,15 @@ private fun App(
                 }.start()
             },
             onTrailers = { full ->
-                Thread {
-                    val built = trailerQueue(client, activeServer, full, settings, store.clientId())
-                    runOnUi { if (built.isNotEmpty()) clips = built }
-                }.start()
+                playError = ""
+                openTrailers(full) { playError = "Aucune bande-annonce pour ce film." }
             },
             onClose = closeDetail,
             notice = playError,
             themeVolume = themeVolume / 100f,
             posters = posters,
             accountToken = token.orEmpty(),
+            voter = voter,
         )
     }
     val openedSeries = series
@@ -919,13 +954,10 @@ private fun App(
             onClose = closeSeries,
             notice = playError,
             onTrailers = { full ->
-                val active = activeServer
                 playError = ""
-                Thread {
-                    val built = if (active == null) emptyList() else runCatching { trailerQueue(client, active, full, settings, store.clientId()) }.getOrDefault(emptyList())
-                    runOnUi { if (built.isNotEmpty()) clips = built else playError = "Aucune bande-annonce pour cette série." }
-                }.start()
+                openTrailers(full) { playError = "Aucune bande-annonce pour cette série." }
             },
+            voter = voter,
         )
     }
     val openedEpisode = episodeOpen
@@ -952,6 +984,21 @@ private fun App(
             promoKey = showKey,
             themePath = openedEpisode.grandparentTheme.ifBlank { openedSeries?.theme.orEmpty() },
             remembered = store.seriesChoice(showKey),
+        )
+    }
+    val pick = trailerPick
+    val pickServer = server
+    if (pick != null && pickServer != null && clips == null) {
+        TrailerStrip(
+            options = pick,
+            wide = { path -> client.wideSources(pickServer, path, 640, 360) },
+            posters = posters,
+            onPick = { option ->
+                trailerReturn = pick
+                trailerPick = null
+                clips = listOf(option.clip)
+            },
+            onClose = { trailerPick = null },
         )
     }
     if (clips != null) {
@@ -1015,7 +1062,15 @@ private fun App(
                     timelineExecutor.execute { client.timeline(active, key, state, position, duration, session) }
                 }
             },
-            onExit = { clips = null },
+            onExit = {
+                clips = null
+                // Bande-annonce lancée depuis la bande de choix : la bande se rouvre pour en choisir une autre.
+                val back = trailerReturn
+                if (back != null) {
+                    trailerReturn = null
+                    trailerPick = back
+                }
+            },
             autoSkipIntro = settings.skipIntro,
             autoSkipCredits = settings.skipCredits,
             skipMarkers = { key ->
@@ -1160,12 +1215,7 @@ private fun App(
                 },
                 onRedraw = { draw(ideaCard) },
                 onOpen = { item -> openMovie(item) },
-                onTrailer = { item ->
-                    Thread {
-                        val built = runCatching { trailerQueue(client, active, item, settings, store.clientId()) }.getOrDefault(emptyList())
-                        runOnUi { if (built.isNotEmpty()) clips = built else ideaNote = "Pas de bande-annonce pour ce film." }
-                    }.start()
-                },
+                onTrailer = { item -> openTrailers(item) { ideaNote = "Pas de bande-annonce pour ce film." } },
                 onClose = { ideaOpen = false },
             )
         }
@@ -1823,13 +1873,14 @@ private fun buildQueue(
     }
 }
 
+/** Bandes-annonces d'un titre, prêtes à lire, avec leur langue : la bande de choix en montre une vignette chacune. */
 private fun trailerQueue(
     client: PlexClient,
     server: ServerEndpoint,
     feature: Metadata,
     settings: PlaybackSettings,
     clientId: String,
-): List<ClipPlay> {
+): List<TrailerOption> {
     return client.extras(server, feature.ratingKey)
         .filter { it.extraType == 1 || it.type == "trailer" }
         .mapNotNull { extra ->
@@ -1851,7 +1902,7 @@ private fun trailerQueue(
             } else {
                 StreamUrlFactory.transcode(server.uri, extra.ratingKey, server.accessToken, clientId)
             }
-            ClipPlay(
+            val clip = ClipPlay(
                 url,
                 meta.title.ifBlank { "Bande-annonce" },
                 tv.plexiplay.plex.preroll.ClipKind.TRAILER,
@@ -1859,6 +1910,7 @@ private fun trailerQueue(
                 "Bande-annonce",
                 direct = direct,
             )
+            TrailerOption(meta, clip, trailerLanguage(meta))
         }
 }
 

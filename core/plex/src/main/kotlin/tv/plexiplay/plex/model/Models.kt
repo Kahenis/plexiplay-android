@@ -110,6 +110,10 @@ data class Metadata(
     val librarySectionID: Long = 0L,
     val ratingKey: String = "",
     val key: String = "",
+    /** Identifiant de secours pour la note Plexiplay si aucun Guid externe n'est présent (voir VotesClient.communityKey). */
+    val guid: String = "",
+    /** Identifiants externes (tmdb://, imdb://, tvdb://) : les mêmes pour tout le monde quel que soit le serveur ou l'agent. */
+    val Guid: List<TagItem> = emptyList(),
     val title: String = "",
     val type: String = "",
     val year: Int = 0,
@@ -146,6 +150,8 @@ data class Metadata(
     val grandparentArt: String = "",
     val extraType: Int = 0,
     val Genre: List<TagItem> = emptyList(),
+    /** Étiquettes du titre (champ libre de Plex, partagé par tous les utilisateurs) : porte la note du propriétaire « Plexiplay n★ ». */
+    val Label: List<TagItem> = emptyList(),
     val Rating: List<RatingItem> = emptyList(),
     val Media: List<MediaInfo> = emptyList(),
     val Role: List<RoleItem> = emptyList(),

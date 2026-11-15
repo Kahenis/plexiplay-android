@@ -821,6 +821,8 @@ fun PlayerScreen(
                 val clip = clips.getOrNull(player.currentMediaItemIndex) ?: return
                 // Lecture complète d'un film : retour à l'écran d'où il a été lancé (le rapport « arrêté » part à la sortie).
                 if (clip.kind == ClipKind.FEATURE && clip.closeOnEnd && !player.hasNextMediaItem()) onExit()
+                // Bande-annonce seule (bouton « Trailer ») : retour à la fiche ou à la bande de choix dès la fin.
+                if (clip.kind == ClipKind.TRAILER && !player.hasNextMediaItem() && clips.all { it.kind == ClipKind.TRAILER }) onExit()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {

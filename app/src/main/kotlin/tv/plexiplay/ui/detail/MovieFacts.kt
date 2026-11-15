@@ -190,11 +190,6 @@ object MovieFacts {
         return if (value > 0f) "Utilisateurs ${formatScore(value)}" else "Utilisateurs —"
     }
 
-    fun stars(movie: Metadata): String {
-        val filled = (movie.userRating / 2f).roundToInt().coerceIn(0, 5)
-        return "★".repeat(filled) + "☆".repeat(5 - filled)
-    }
-
     fun mediaFor(movie: Metadata, resolution: String): MediaInfo? {
         if (movie.Media.isEmpty()) return null
         return movie.Media.minByOrNull { kotlin.math.abs(rank(it.videoResolution) - rank(resolution)).let { d -> if (d == 0) 0 else d + 1 } }

@@ -100,6 +100,7 @@ fun SeriesScreen(
     notice: String = "",
     themeVolume: Float = 0.5f,
     onTrailers: (Metadata) -> Unit = {},
+    voter: String = "",
 ) {
     val context = LocalContext.current
     var show by remember(seed.ratingKey) { mutableStateOf(seed) }
@@ -111,6 +112,17 @@ fun SeriesScreen(
     var themeUrl by remember(seed.ratingKey) { mutableStateOf<String?>(null) }
     var art by remember(seed.ratingKey) { mutableStateOf<Bitmap?>(null) }
     var lastSeason by remember(seed.ratingKey) { mutableStateOf<String?>(null) }
+    // Panneau « Votre note » ouvert par le bouton « ★ Noter », et la moyenne Plexiplay de tous les utilisateurs pour ce titre.
+    var rating by remember(seed.ratingKey) { mutableStateOf(false) }
+    var community by remember(seed.ratingKey) { mutableStateOf<tv.plexiplay.plex.votes.CommunityRating?>(null) }
+    // « Écrire un avis » (depuis le panneau de note) et le popup des avis courts (clic sur les étoiles de la fiche).
+    var reviewStars by remember(seed.ratingKey) { mutableStateOf<Int?>(null) }
+    var reviewsOpen by remember(seed.ratingKey) { mutableStateOf(false) }
+    var reviews by remember(seed.ratingKey) { mutableStateOf<List<tv.plexiplay.plex.votes.Review>>(emptyList()) }
+    LaunchedEffect(show.ratingKey, voter) {
+        val fetched = withContext(Dispatchers.IO) { runCatching { PlexiStars.fetch(show, voter) }.getOrNull() }
+        if (fetched != null) community = fetched
+    }
     var note by remember { mutableStateOf("") }
     val playFocus = remember { FocusRequester() }
     val seasonFocus = remember { FocusRequester() }
@@ -237,7 +249,7 @@ fun SeriesScreen(
             .futureEntrance()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
-                    if (season != null) onSeason(null) else onClose()
+                    if (reviewsOpen) reviewsOpen = false else if (reviewStars != null) reviewStars = null else if (rating) rating = false else if (season != null) onSeason(null) else onClose()
                     true
                 } else false
             },
@@ -272,12 +284,18 @@ fun SeriesScreen(
                 if (genres.isNotBlank()) {
                     Text(genres, color = Paper, fontSize = 15.sp, modifier = Modifier.padding(top = 2.dp))
                 }
-                Text(
-                    "${MovieFacts.imdb(show)}    ${MovieFacts.audience(show)}    ${MovieFacts.stars(show)}",
-                    color = Paper,
-                    fontSize = 15.sp,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${MovieFacts.imdb(show)}    ${MovieFacts.audience(show)}    ", color = Paper, fontSize = 15.sp)
+                    PlexiStarsRow(community) {
+                        val target = show
+                        reviews = emptyList()
+                        reviewsOpen = true
+                        Thread {
+                            val fetched = runCatching { PlexiStars.reviews(target) }.getOrDefault(emptyList())
+                            android.os.Handler(android.os.Looper.getMainLooper()).post { reviews = fetched }
+                        }.start()
+                    }
+                }
                 Text(
                     show.summary.ifBlank { "Résumé indisponible." },
                     color = Color(0xFFD5DBE2),
@@ -303,6 +321,7 @@ fun SeriesScreen(
                         if (episode != null) onPlay(show, episode) else note = "Aucun épisode lisible"
                     }
                     Action("🎬 Trailer") { onTrailers(show) }
+                    Action("★ Noter") { rating = true }
                     Action(if (watched) "Série marquée comme vue" else "Marquer la série comme vue") {
                         val state = !watched
                         watched = state
@@ -378,6 +397,51 @@ fun SeriesScreen(
                     }
                 }
             }
+        }
+        if (rating) {
+            RateDialog(
+                current = community?.mine ?: 0,
+                onClose = { rating = false },
+                onWriteReview = { stars ->
+                    rating = false
+                    reviewStars = stars
+                },
+                onRate = { stars ->
+                    rating = false
+                    val target = show
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, stars) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        val openReview = reviewStars
+        if (openReview != null) {
+            ReviewDialog(
+                initial = community?.myReview.orEmpty(),
+                stars = openReview,
+                onCancel = { reviewStars = null },
+                onValidate = { text ->
+                    reviewStars = null
+                    val target = show
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        if (reviewsOpen) {
+            ReviewsPopup(reviews = reviews, onClose = { reviewsOpen = false })
         }
     }
 }
