@@ -1,0 +1,6 @@
+371325:> Task :app:compileReleaseKotlin FAILED
+371326:e: file:///home/runner/work/plexiplay-android/plexiplay-android/app/src/main/kotlin/tv/plexiplay/ui/detail/Stars.kt:387:9 Unresolved reference 'withStyle'.
+371331:* What went wrong:
+371374:Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+371503:Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
+371535:BUILD FAILED in 2m 36s
