@@ -426,51 +426,6 @@ fun MovieDetailScreen(
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = if (compact) 16.dp else 36.dp, end = 16.dp, bottom = barHeight + 4.dp),
             )
         }
-        if (rating) {
-            RateDialog(
-                current = community?.mine ?: 0,
-                onClose = { rating = false },
-                onWriteReview = { stars ->
-                    rating = false
-                    reviewStars = stars
-                },
-                onRate = { stars ->
-                    rating = false
-                    val target = movie
-                    Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, stars, voterName = accountName) }.getOrDefault(false)
-                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            if (fresh != null) community = fresh
-                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
-                        }
-                    }.start()
-                },
-            )
-        }
-        val openReview = reviewStars
-        if (openReview != null) {
-            ReviewDialog(
-                initial = community?.myReview.orEmpty(),
-                stars = openReview,
-                onCancel = { reviewStars = null },
-                onValidate = { text ->
-                    reviewStars = null
-                    val target = movie
-                    Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text, accountName) }.getOrDefault(false)
-                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            if (fresh != null) community = fresh
-                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
-                        }
-                    }.start()
-                },
-            )
-        }
-        if (reviewsOpen) {
-            ReviewsPopup(reviews = reviews, onClose = { reviewsOpen = false })
-        }
         val leftBar: @Composable () -> Unit = {
             if (movie.viewOffset >= 30_000L) {
                 Action("Reprendre à ${resumeLabel(movie.viewOffset)}", playFocus, primary = true) {
@@ -577,6 +532,53 @@ fun MovieDetailScreen(
         val openActor = actor
         if (openActor != null && posters != null) {
             ActorDialog(entry = openActor, info = person, posters = posters, thumbs = roleImages, onClose = { actor = null })
+        }
+        // Composés en dernier : « Votre note », « Écrire un avis » et les avis passent par-dessus la barre de boutons
+        // (Compose dessine dans l'ordre de composition ; avant, ils étaient dessous). Comme la TV 1.9.2.5.
+        if (rating) {
+            RateDialog(
+                current = community?.mine ?: 0,
+                onClose = { rating = false },
+                onWriteReview = { stars ->
+                    rating = false
+                    reviewStars = stars
+                },
+                onRate = { stars ->
+                    rating = false
+                    val target = movie
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, stars, voterName = accountName) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        val openReview = reviewStars
+        if (openReview != null) {
+            ReviewDialog(
+                initial = community?.myReview.orEmpty(),
+                stars = openReview,
+                onCancel = { reviewStars = null },
+                onValidate = { text ->
+                    reviewStars = null
+                    val target = movie
+                    Thread {
+                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text, accountName) }.getOrDefault(false)
+                        val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (fresh != null) community = fresh
+                            if (!saved) note = "Le service de notation Plexiplay est injoignable"
+                        }
+                    }.start()
+                },
+            )
+        }
+        if (reviewsOpen) {
+            ReviewsPopup(reviews = reviews, onClose = { reviewsOpen = false })
         }
     }
 }

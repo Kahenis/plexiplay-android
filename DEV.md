@@ -113,6 +113,12 @@
 - `MovieDetailScreen` et `SeriesScreen` reçoivent `accountName` (comme `voter`) et l'utilisent pour les deux écrans (noter, écrire un avis) ; `ReviewCard` affiche le nom masqué, en couleur (lettres en accent, points en gris), à côté des étoiles de l'avis.
 - Clavier système déjà en place côté tactile depuis la 1.6.3 (`BasicTextField`) : pas de retouche nécessaire pour cette version.
 
+## 1.6.5 : avis par-dessus les boutons, Sagas dans les onglets, paysage forcé sur téléphone
+
+- Fiche film : « Votre note », « Écrire un avis » et la liste des avis sont composés en dernier dans `MovieDetailScreen` (après la barre de boutons, les listes de choix, le résumé et la fiche acteur) : ils passaient dessous la rangée de boutons. Même correctif que la TV 1.9.2.5 ; la fiche série était déjà dans le bon ordre.
+- Bibliothèques : l'interrupteur « Sagas » n'est plus posé à côté de l'heure (il recouvrait les onglets). `ShellScreen` reçoit `sagaSwitch` et le place au bout de la rangée d'onglets ; la rangée laisse 84 dp libres à droite pour l'heure (`ClockChip`, seule en haut à droite).
+- Orientation : `appOrientation(context)` (`Orientation.kt`) : téléphone classique (plus petite dimension < 600 dp, sans capteur de charnière `android.hardware.sensor.hinge_angle`) → `SENSOR_LANDSCAPE` pour toute l'appli ; pliant (ouvert ou fermé) et tablette → rotation libre. Appliqué dans `MainActivity.onCreate` et au retour du lecteur (`ImmersiveLandscape`, qui remettait toujours la rotation libre).
+
 ---
 
 # Notes de développement (Plexiplay clone)

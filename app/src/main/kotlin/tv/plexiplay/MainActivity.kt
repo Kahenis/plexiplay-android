@@ -93,6 +93,8 @@ private val timelineExecutor = java.util.concurrent.Executors.newSingleThreadExe
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Téléphone classique : paysage forcé ; pliant et tablette : rotation libre.
+        requestedOrientation = appOrientation(this)
         val store = SessionStore(this)
         applyLanguage(store.settings().uiLanguage)
         val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
@@ -652,6 +654,19 @@ private fun App(
         },
         styleActive = style != null && pane == LibraryPane.LIBRARY,
         onStyle = { stylePicker = true },
+        sagaSwitch = if (pane == LibraryPane.LIBRARY && style == null && !inside && entries.firstOrNull { it.id == selected }?.type == "movie") {
+            {
+                tv.plexiplay.ui.shell.SagaSwitch(
+                    on = sagas,
+                    onToggle = {
+                        sagas = !sagas
+                        store.saveSagaMode(sagas)
+                    },
+                )
+            }
+        } else {
+            null
+        },
         onIdea = {
             ideaChoice = null
             ideaCard = null
@@ -1268,24 +1283,10 @@ private fun App(
         )
     }
     // Horloge en haut à droite, partout sauf pendant la lecture.
+    // Mobile : l'interrupteur « Sagas » est dans la rangée d'onglets de la bibliothèque (ShellScreen).
     if (clips == null) {
-        val sagaSwitchShown = movie == null && series == null && !stylePicker && !ideaOpen && confirm == null && !picker &&
-            startupOffer == null && pendingInvites == null && pane == LibraryPane.LIBRARY && style == null && !inside &&
-            entries.firstOrNull { it.id == selected }?.type == "movie"
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopEnd) {
-            androidx.compose.foundation.layout.Row(Modifier.padding(top = 10.dp, end = 18.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (sagaSwitchShown) {
-                    tv.plexiplay.ui.shell.SagaSwitch(
-                        on = sagas,
-                        onToggle = {
-                            sagas = !sagas
-                            store.saveSagaMode(sagas)
-                        },
-                    )
-                    androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 10.dp))
-                }
-                tv.plexiplay.ui.shell.ClockChip()
-            }
+            tv.plexiplay.ui.shell.ClockChip(Modifier.padding(top = 10.dp, end = 18.dp))
         }
     }
     val invitesShown = pendingInvites

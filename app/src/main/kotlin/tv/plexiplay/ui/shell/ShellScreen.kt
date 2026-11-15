@@ -148,6 +148,8 @@ fun ShellScreen(
     styleActive: Boolean = false,
     onStyle: (() -> Unit)? = null,
     onIdea: (() -> Unit)? = null,
+    // Mobile : interrupteur « Sagas » placé au bout de la rangée d'onglets (au lieu de flotter à côté de l'heure).
+    sagaSwitch: (@Composable () -> Unit)? = null,
     onSelect: (RailEntry) -> Unit,
     onOpen: (Metadata) -> Unit,
     onPane: (LibraryPane) -> Unit,
@@ -383,10 +385,15 @@ fun ShellScreen(
                 search()
             } else {
                 if (showTabs) {
-                    // Mobile : les onglets défilent au doigt s'ils ne tiennent pas sur la largeur.
+                    // Mobile : les onglets défilent au doigt s'ils ne tiennent pas sur la largeur ; « Sagas » au bout ;
+                    // la droite de la rangée reste libre pour l'heure, qui flotte en haut à droite de l'écran.
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 8.dp, end = 84.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(bottom = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                        modifier = Modifier.weight(1f).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
                     ) {
                         PaneChip("Bibliothèque", pane == LibraryPane.LIBRARY && !styleActive, contentActive) { changePane(LibraryPane.LIBRARY) }
                         if (!isShowLibrary) {
@@ -401,6 +408,11 @@ fun ShellScreen(
                             androidx.compose.foundation.layout.Spacer(Modifier.width(if (isTablet()) 36.dp else 12.dp))
                             PaneChip("Idée film", false, contentActive, idle = Color(0xFF6B4A1E)) { onIdea() }
                         }
+                    }
+                    if (sagaSwitch != null) {
+                        androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
+                        sagaSwitch()
+                    }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {

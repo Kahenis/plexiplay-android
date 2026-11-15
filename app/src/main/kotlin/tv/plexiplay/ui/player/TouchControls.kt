@@ -44,7 +44,7 @@ private fun Context.activity(): Activity? {
 
 /**
  * Pendant la lecture : écran en paysage (selon le capteur) et barres du système masquées.
- * À la sortie, l'orientation redevient libre.
+ * À la sortie, l'orientation redevient celle de l'appli (`appOrientation`).
  */
 @Composable
 internal fun ImmersiveLandscape() {
@@ -57,7 +57,8 @@ internal fun ImmersiveLandscape() {
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            // Retour à l'orientation de l'appli (paysage forcé sur téléphone classique, libre sinon).
+            activity?.requestedOrientation = tv.plexiplay.appOrientation(context)
             controller?.show(WindowInsetsCompat.Type.navigationBars())
         }
     }
