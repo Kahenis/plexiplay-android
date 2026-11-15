@@ -937,6 +937,7 @@ private fun App(
             posters = posters,
             accountToken = token.orEmpty(),
             voter = voter,
+            accountName = accountName,
         )
     }
     val openedSeries = series
@@ -958,6 +959,7 @@ private fun App(
                 openTrailers(full) { playError = "Aucune bande-annonce pour cette série." }
             },
             voter = voter,
+            accountName = accountName,
         )
     }
     val openedEpisode = episodeOpen

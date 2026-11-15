@@ -106,6 +106,13 @@
 - Repris : bande de choix des bandes-annonces (`TrailerPicker.kt`, une seule = lecture directe), étoiles « Plexiplay » (note commune à tous les utilisateurs via `votes.php` sur guilard.com, `VotesClient`), bouton « ★ Noter » (fiche film et série), avis courts (200 caractères) et liste des avis en touchant les étoiles ; message de la fiche affiché au-dessus des boutons.
 - Adaptations mobile : `RateDialog` : étoiles touchables, boutons Valider / Écrire un avis / Annuler, toucher à côté = fermer ; `ReviewDialog` : clavier du téléphone (`BasicTextField`, 200 caractères, `imePadding`) au lieu du clavier virtuel de la TV ; `ReviewsPopup` : bouton Fermer, toucher à côté = fermer, cartes limitées à 72 % de la largeur ; Recherche : clavier du téléphone conservé (`Keyboard.kt` présent, inutilisé) ; message de la fiche placé juste au-dessus de la barre de boutons mesurée.
 
+## 1.6.4 : nom de l'auteur sur les avis (comme la TV 1.9.2.9)
+
+- Reprise de la version TV 1.9.2.9 (le nom du compte Plex de l'auteur d'un avis, chiffré en base — AES-GCM, clé dérivée de `APP_KEY` — et masqué par l'appli au moment de l'affichage, jamais stocké tel quel : `VotesClient.maskedName` affiche les 3 premières lettres de chaque mot du nom (prénom puis nom), suivies d'un point « • » par lettre cachée). `votes.php` (livré séparément, hors dépôt) gère seul la migration de la colonne (`name_enc`), commune aux deux applications (même service `guilard.com/plexiplay-votes/votes.php`).
+- `VotesClient.submit(...)` accepte `voterName` (chiffré avant l'envoi, jamais en clair) ; `Review.name` porte le nom déjà déchiffré. `PlexiStars.save(...)` transmet le nom du compte (`accountName`, déjà lu par `MainActivity` pour l'écran Réglages) à `VotesClient.submit`.
+- `MovieDetailScreen` et `SeriesScreen` reçoivent `accountName` (comme `voter`) et l'utilisent pour les deux écrans (noter, écrire un avis) ; `ReviewCard` affiche le nom masqué, en couleur (lettres en accent, points en gris), à côté des étoiles de l'avis.
+- Clavier système déjà en place côté tactile depuis la 1.6.3 (`BasicTextField`) : pas de retouche nécessaire pour cette version.
+
 ---
 
 # Notes de développement (Plexiplay clone)

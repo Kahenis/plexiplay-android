@@ -72,13 +72,14 @@ object PlexiStars {
 
     /**
      * Enregistre ma note (1 à 5) et, si fourni, mon avis court dans la base commune à tous les utilisateurs
-     * Plexiplay. `review` : null = ne pas y toucher, chaîne vide = l'effacer, texte = le remplacer.
+     * Plexiplay, avec le nom de mon compte Plex (chiffré avant l'envoi par VotesClient, jamais en clair).
+     * `review` : null = ne pas y toucher, chaîne vide = l'effacer, texte = le remplacer.
      * Renvoie false si le service guilard.com est injoignable ou a refusé.
      */
-    fun save(meta: Metadata, voter: String, stars: Int, review: String? = null): Boolean {
+    fun save(meta: Metadata, voter: String, stars: Int, review: String? = null, voterName: String = ""): Boolean {
         val guid = VotesClient.communityKey(meta)
         if (guid.isBlank() || voter.isBlank()) return false
-        return VotesClient.submit(guid, voter, stars, review)
+        return VotesClient.submit(guid, voter, stars, review, voterName)
     }
 
     /** Relit ma note et la moyenne des autres pour ce titre. Null si le titre n'a pas d'identifiant commun, ou si le service est injoignable. */
@@ -359,6 +360,7 @@ fun ReviewsPopup(reviews: List<Review>, onClose: () -> Unit) {
 
 @Composable
 private fun ReviewCard(entry: Review) {
+    val masked = remember(entry.name) { VotesClient.maskedName(entry.name) }
     Column(
         Modifier
             .width(minOf(260, (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp * 0.72f).toInt()).dp)
@@ -367,11 +369,23 @@ private fun ReviewCard(entry: Review) {
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row {
-            for (index in 1..5) {
-                Text(if (index <= entry.stars) "★" else "☆", color = if (index <= entry.stars) Signal else Color(0xFF4D5860), fontSize = 15.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row {
+                for (index in 1..5) {
+                    Text(if (index <= entry.stars) "★" else "☆", color = if (index <= entry.stars) Signal else Color(0xFF4D5860), fontSize = 15.sp)
+                }
             }
+            if (masked.isNotEmpty()) Text(maskedLabel(masked), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(entry.text, color = Color(0xFFD5DBE2), fontSize = 14.sp, lineHeight = 18.sp)
+    }
+}
+
+/** Colore un nom masqué (ex. « JEF• GUI•••• ») : lettres en accent, points « • » en gris discret. */
+private fun maskedLabel(masked: String) = androidx.compose.ui.text.buildAnnotatedString {
+    for (char in masked) {
+        withStyle(androidx.compose.ui.text.SpanStyle(color = if (char == '•') Color(0xFF5A6572) else Accent)) {
+            append(char)
+        }
     }
 }

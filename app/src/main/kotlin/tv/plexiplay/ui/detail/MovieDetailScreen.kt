@@ -102,6 +102,7 @@ fun MovieDetailScreen(
     posters: tv.plexiplay.ui.shell.PosterStore? = null,
     accountToken: String = "",
     voter: String = "",
+    accountName: String = "",
 ) {
     val context = LocalContext.current
     // Téléphone en portrait : une colonne qui défile, boutons qui passent à la ligne.
@@ -437,7 +438,7 @@ fun MovieDetailScreen(
                     rating = false
                     val target = movie
                     Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, stars) }.getOrDefault(false)
+                        val saved = runCatching { PlexiStars.save(target, voter, stars, voterName = accountName) }.getOrDefault(false)
                         val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             if (fresh != null) community = fresh
@@ -457,7 +458,7 @@ fun MovieDetailScreen(
                     reviewStars = null
                     val target = movie
                     Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text) }.getOrDefault(false)
+                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text, accountName) }.getOrDefault(false)
                         val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             if (fresh != null) community = fresh

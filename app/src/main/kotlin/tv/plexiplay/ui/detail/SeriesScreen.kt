@@ -101,6 +101,7 @@ fun SeriesScreen(
     themeVolume: Float = 0.5f,
     onTrailers: (Metadata) -> Unit = {},
     voter: String = "",
+    accountName: String = "",
 ) {
     val context = LocalContext.current
     var show by remember(seed.ratingKey) { mutableStateOf(seed) }
@@ -410,7 +411,7 @@ fun SeriesScreen(
                     rating = false
                     val target = show
                     Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, stars) }.getOrDefault(false)
+                        val saved = runCatching { PlexiStars.save(target, voter, stars, voterName = accountName) }.getOrDefault(false)
                         val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             if (fresh != null) community = fresh
@@ -430,7 +431,7 @@ fun SeriesScreen(
                     reviewStars = null
                     val target = show
                     Thread {
-                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text) }.getOrDefault(false)
+                        val saved = runCatching { PlexiStars.save(target, voter, openReview, text, accountName) }.getOrDefault(false)
                         val fresh = runCatching { PlexiStars.fetch(target, voter) }.getOrNull()
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             if (fresh != null) community = fresh
