@@ -697,7 +697,7 @@ private fun RailRow(
             }
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = active }
-            .tap { onClick() }
+            .tap { onClick(bounds) }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     pulse.fire(1.1f)
