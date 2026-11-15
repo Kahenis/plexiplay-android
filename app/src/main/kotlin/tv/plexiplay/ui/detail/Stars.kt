@@ -35,7 +35,10 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tv.plexiplay.plex.model.Metadata
@@ -382,9 +385,9 @@ private fun ReviewCard(entry: Review) {
 }
 
 /** Colore un nom masqué (ex. « JEF• GUI•••• ») : lettres en accent, points « • » en gris discret. */
-private fun maskedLabel(masked: String) = androidx.compose.ui.text.buildAnnotatedString {
+private fun maskedLabel(masked: String) = buildAnnotatedString {
     for (char in masked) {
-        withStyle(androidx.compose.ui.text.SpanStyle(color = if (char == '•') Color(0xFF5A6572) else Accent)) {
+        withStyle(SpanStyle(color = if (char == '•') Color(0xFF5A6572) else Accent)) {
             append(char)
         }
     }
