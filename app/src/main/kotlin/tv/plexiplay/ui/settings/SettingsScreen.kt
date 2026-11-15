@@ -1,5 +1,4 @@
 package tv.plexiplay.ui.settings
-
 import tv.plexiplay.ui.theme.tap
 
 import tv.plexiplay.ui.theme.screenBackground
@@ -9,11 +8,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,6 +57,7 @@ import tv.plexiplay.ui.theme.Paper
 import tv.plexiplay.ui.theme.Signal
 import tv.plexiplay.update.UpdateOffer
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     settings: PlaybackSettings,
@@ -77,6 +80,10 @@ fun SettingsScreen(
     themeVolume: Int = 20,
     onThemeVolume: (Int) -> Unit = {},
     prerollVolume: Int = 75,
+    accountName: String = "",
+    prerollPauseUntil: Long = 0L,
+    onPrerollPause: () -> Unit = {},
+    onPrerollResume: () -> Unit = {},
     onPrerollVolume: (Int) -> Unit = {},
     inviteStatus: String = "",
     onCheckInvites: () -> Unit = {},
@@ -117,134 +124,165 @@ fun SettingsScreen(
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Text("Paramètres", color = Paper, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold) }
             item {
-                Hinted("Piste audio choisie automatiquement au lancement d'un film ou d'un épisode.") {
-                    Cycle("Langue audio par défaut", settings.audioLanguage, listOf("original", "fr", "en", "de", "es"), firstFocus) {
-                        onChange(settings.copy(audioLanguage = it))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("Paramètres", color = Paper, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+                    if (accountName.isNotBlank()) {
+                        Text(
+                            " - $accountName",
+                            color = Color(0xFF9AA3AD),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 1.dp),
+                        )
                     }
                 }
             }
             item {
-                Hinted("Sous-titres choisis automatiquement (« off » = aucun).") {
-                    Cycle("Sous-titres par défaut", settings.subtitleLanguage, listOf("off", "fr", "en", "de", "es")) {
-                        onChange(settings.copy(subtitleLanguage = it))
+                Group("RÉGLAGES PRINCIPAUX") {
+                    Hinted("Piste audio choisie automatiquement au lancement d'un film ou d'un épisode.") {
+                        Cycle("Langue audio par défaut", settings.audioLanguage, listOf("original", "fr", "en", "de", "es"), firstFocus) {
+                            onChange(settings.copy(audioLanguage = it))
+                        }
                     }
-                }
-            }
-            item {
-                Hinted("Choisissez les bibliothèques visibles dans le menu, serveur par serveur.") {
-                    Chip("Bibliothèques affichées", onClick = onLibraries)
-                }
-            }
-            item {
-                val playerName = if (settings.player == PlayerKind.MPV) "mpv" else "ExoPlayer"
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(vertical = 6.dp),
-                ) {
-                    Cycle("Lecteur", playerName, listOf("ExoPlayer", "mpv")) {
-                        onChange(settings.copy(player = if (it == "mpv") PlayerKind.MPV else PlayerKind.EXO))
+                    Hinted("Sous-titres choisis automatiquement (« off » = aucun).") {
+                        Cycle("Sous-titres par défaut", settings.subtitleLanguage, listOf("off", "fr", "en", "de", "es")) {
+                            onChange(settings.copy(subtitleLanguage = it))
+                        }
                     }
-                    Text(
-                        "ExoPlayer est léger, mais il transcode certains codecs (délai avant la lecture). mpv est plus lourd, mais il les lit directement (lecture immédiate). ExoPlayer est en général suffisant.",
-                        color = Color(0xFF9AA3AD),
-                        fontSize = 10.5.sp,
-                        lineHeight = 12.5.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            item {
-                val labels = mapOf("auto" to "Automatique", "on" to "Activé", "off" to "Désactivé")
-                Hinted("Si une vidéo bloque (écran noir), l'appli lit l'image en HDR10 et convertit le son. Automatique : elle bascule seule.") {
-                    Cycle("Mode compatible", labels[settings.compatMode] ?: "Automatique", labels.values.toList()) {
-                        val mode = labels.entries.firstOrNull { e -> e.value == it }?.key ?: "auto"
-                        onChange(settings.copy(compatMode = mode, compat = mode == "on"))
+                    val playerName = if (settings.player == PlayerKind.MPV) "mpv" else "ExoPlayer"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Cycle("Lecteur", playerName, listOf("ExoPlayer", "mpv")) {
+                            onChange(settings.copy(player = if (it == "mpv") PlayerKind.MPV else PlayerKind.EXO))
+                        }
+                        Text(
+                            "ExoPlayer est léger, mais il transcode certains codecs (délai avant la lecture). mpv est plus lourd, mais il les lit directement (lecture immédiate). ExoPlayer est en général suffisant.",
+                            color = Color(0xFF9AA3AD),
+                            fontSize = 10.5.sp,
+                            lineHeight = 12.5.sp,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                }
-                Text(
-                    tv.plexiplay.player.DeviceCodecs.summary(),
-                    color = Color(0xFF9AA3AD),
-                    fontSize = 10.5.sp,
-                    modifier = Modifier.padding(bottom = 5.dp),
-                )
-            }
-            if (settings.player != PlayerKind.MPV) {
-                item {
-                    Hinted("Corrige l'image étirée sur certains écrans. Désactivez-la si l'image est déjà correcte.") {
-                        Cycle("Correction du format", if (settings.formatFix) "Activée" else "Désactivée", listOf("Activée", "Désactivée")) {
-                            onChange(settings.copy(formatFix = it == "Activée"))
+                    val serverName = servers.getOrNull(serverIndex)?.name?.ifBlank { null } ?: "Aucun"
+                    Hinted("Serveur Plex utilisé. Appuyez pour passer au suivant.") {
+                        Chip("Serveur : $serverName") {
+                            if (servers.size > 1) onServer((serverIndex + 1) % servers.size)
                         }
                     }
                 }
             }
             item {
-                Hinted("Apparence de l'application : classique, ou « Néon » avec boutons en relief.") {
-                    Cycle("Thème", if (theme == "neon") "Néon" else "Classique", listOf("Classique", "Néon")) {
-                        onTheme(if (it == "Néon") "neon" else "classic")
+                Group("AMÉLIORATIONS") {
+                    Hinted("Choisissez les bibliothèques visibles dans le menu, serveur par serveur.") {
+                        Chip("Bibliothèques affichées", onClick = onLibraries)
                     }
-                }
-            }
-            item {
-                Hinted("Musique de générique des fiches de saisons et d'épisodes (0 à 50 %).") {
-                    Chip("Volume du générique : " + (if (themeVolume == 0) "muet" else "$themeVolume %")) { volumeOpen = true }
-                }
-            }
-            item {
-                Hinted("Volume des annonces avant le film (20 à 100 %). Le film garde son volume normal.") {
-                    Chip("Volume des prerolls : $prerollVolume %") { prerollOpen = true }
-                }
-            }
-            item {
-                val serverName = servers.getOrNull(serverIndex)?.name?.ifBlank { null } ?: "Aucun"
-                Hinted("Serveur Plex utilisé. Appuyez pour passer au suivant.") {
-                    Chip("Serveur : $serverName") {
-                        if (servers.size > 1) onServer((serverIndex + 1) % servers.size)
+                    val labels = mapOf("auto" to "Automatique", "on" to "Activé", "off" to "Désactivé")
+                    Hinted("Si une vidéo bloque (écran noir), l'appli lit l'image en HDR10 et convertit le son. Automatique : elle bascule seule.") {
+                        Cycle("Mode compatible", labels[settings.compatMode] ?: "Automatique", labels.values.toList()) {
+                            val mode = labels.entries.firstOrNull { e -> e.value == it }?.key ?: "auto"
+                            onChange(settings.copy(compatMode = mode, compat = mode == "on"))
+                        }
                     }
-                }
-            }
-            item {
-                Hinted("Vérifie si une nouvelle version de l'appli est disponible.") {
-                    Chip(
-                        if (updateStatus.isBlank()) "Mise à jour : $versionName" else updateStatus,
-                        tint = if (updateStatus.startsWith("Téléchargement")) Color(0xFF5DD39E) else if (updateStatus.isBlank()) Color(0xFFE39A3C) else null,
-                        onClick = onCheckUpdate,
+                    val boosts = mapOf(100 to "Normal", 150 to "Renforcé", 200 to "Fort")
+                    Hinted("Gain demandé au serveur quand il convertit le son. À augmenter si le volume est trop faible en conversion.") {
+                        Cycle("Volume du son converti", boosts[settings.audioBoost] ?: "Normal", boosts.values.toList()) {
+                            val value = boosts.entries.firstOrNull { e -> e.value == it }?.key ?: 100
+                            onChange(settings.copy(audioBoost = value))
+                        }
+                    }
+                    Text(
+                        "Codecs intégrés à l'appareil : " + tv.plexiplay.player.DeviceCodecs.summary(),
+                        color = Color(0xFF9AA3AD),
+                        fontSize = 10.5.sp,
                     )
-                }
-            }
-            if (updateProgress >= 0f) {
-                item {
-                    Column {
-                        tv.plexiplay.ui.shell.ThinBar(updateProgress, Modifier.width(220.dp))
-                        if (updateDetail.isNotBlank()) Text(updateDetail, color = Paper, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-            }
-            if (offer != null) {
-                item { Text("La version ${offer.version} est disponible.", color = Paper, fontSize = 11.sp) }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chip("Installer", primary = true, onClick = onInstall)
-                        Chip("Annuler", onClick = onCancelUpdate)
+                    if (settings.player != PlayerKind.MPV) {
+                        Hinted("Corrige l'image étirée sur certains écrans. Désactivez-la si l'image est déjà correcte.") {
+                            Cycle("Correction du format", if (settings.formatFix) "Activée" else "Désactivée", listOf("Activée", "Désactivée")) {
+                                onChange(settings.copy(formatFix = it == "Activée"))
+                            }
+                        }
                     }
                 }
             }
             item {
-                Hinted("Retire votre compte Plex de cet appareil.") {
-                    Chip("Se déconnecter", onClick = onSignOut)
+                Group("CONFORT") {
+                    Hinted("Apparence de l'application : classique, ou « Néon » avec boutons en relief.") {
+                        Cycle("Thème", if (theme == "neon") "Néon" else "Classique", listOf("Classique", "Néon")) {
+                            onTheme(if (it == "Néon") "neon" else "classic")
+                        }
+                    }
+                    Hinted("Musique de générique des fiches de saisons et d'épisodes (0 à 60 %).") {
+                        Chip("Volume du générique : " + (if (themeVolume == 0) "muet" else "$themeVolume %")) { volumeOpen = true }
+                    }
+                    Hinted("Volume des annonces avant le film (20 à 100 %). Le film garde son volume normal.") {
+                        Chip("Volume des prerolls : $prerollVolume %") { prerollOpen = true }
+                    }
+                    val paused = prerollPauseUntil > System.currentTimeMillis()
+                    val startFocus = remember { FocusRequester() }
+                    val cancelFocus = remember { FocusRequester() }
+                    var first by remember { mutableStateOf(true) }
+                    LaunchedEffect(paused) {
+                        if (first) { first = false; return@LaunchedEffect }
+                        delay(60)
+                        runCatching { if (paused) cancelFocus.requestFocus() else startFocus.requestFocus() }
+                    }
+                    if (paused) {
+                        val until = java.text.SimpleDateFormat("dd/MM/yyyy 'à' HH:mm", java.util.Locale.FRANCE).format(java.util.Date(prerollPauseUntil))
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text("Prerolls désactivés, remis en place le $until", color = Paper, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            Chip("Annuler", requester = cancelFocus) { onPrerollResume() }
+                        }
+                    } else {
+                        Hinted("Plus aucune annonce avant les films pendant 7 jours. Les bandes-annonces et le film ne changent pas.") {
+                            Chip("Désactiver les prerolls pendant 7 jours", requester = startFocus) { onPrerollPause() }
+                        }
+                    }
                 }
             }
             item {
-                Hinted("Cherche une demande d'ami ou un partage de bibliothèques envoyé à votre compte Plex.") {
-                    Chip(
-                        if (inviteStatus.isBlank()) "Vérifier les invitations" else inviteStatus,
-                        tint = if (inviteStatus.startsWith("Recherche") || inviteStatus.startsWith("Acceptation")) Color(0xFF5DD39E) else null,
-                        onClick = onCheckInvites,
-                    )
+                Group("PRATIQUE") {
+                    val current = "V" + versionName.trimStart('v', 'V')
+                    Hinted("Vérifie si une nouvelle version de l'appli est disponible.") {
+                        Chip("Recherche mise à jour", onClick = onCheckUpdate)
+                    }
+                    // Téléphone : la ligne d'état passe à la ligne si elle ne tient pas.
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (updateProgress >= 0f) {
+                            tv.plexiplay.ui.shell.ThinBar(updateProgress, Modifier.width(220.dp).align(Alignment.CenterVertically))
+                            if (updateDetail.isNotBlank()) Text(updateDetail, color = Paper, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            if (offer != null) Chip("Annuler", onClick = onCancelUpdate)
+                        } else if (offer != null) {
+                            Text("Version proposée : V" + offer.version.trimStart('v', 'V') + " ($current actuelle)", color = Color(0xFF5DD39E), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            Chip("Mise à jour", primary = true, onClick = onInstall)
+                            Chip("Annuler", onClick = onCancelUpdate)
+                        } else if (updateStatus.isNotBlank()) {
+                            Text(updateStatus, color = Color(0xFFE39A3C), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                        } else {
+                            Text("Version actuelle $current", color = Color(0xFF9AA3AD), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                        }
+                    }
+                    Hinted("Cherche une demande d'ami ou un partage de bibliothèques envoyé à votre compte Plex.") {
+                        Chip(
+                            if (inviteStatus.isBlank()) "Vérifier les invitations" else inviteStatus,
+                            tint = if (inviteStatus.startsWith("Recherche") || inviteStatus.startsWith("Acceptation")) Color(0xFF5DD39E) else null,
+                            onClick = onCheckInvites,
+                        )
+                    }
+                    Hinted("Retire votre compte Plex de cet appareil.") {
+                        Chip("Se déconnecter", onClick = onSignOut)
+                    }
                 }
             }
         }
@@ -254,6 +292,29 @@ fun SettingsScreen(
             fontSize = 10.sp,
             modifier = Modifier.fillMaxWidth().background(Ink).padding(horizontal = 16.dp, vertical = 8.dp),
         )
+    }
+}
+
+/** Couleur des boutons au repos : plus claire que le fond des cadres pour qu'ils restent visibles sans focus. */
+private val IdleButton: Color
+    get() = if (tv.plexiplay.ui.theme.ThemeMode.neon) Color(0xFF2F3A78) else Color(0xFF3A4552)
+
+/** Cadre d'un groupe de réglages : titre en capitales avec une barre de couleur, fond léger et bordure arrondie. */
+@Composable
+private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 2.dp)) {
+            Box(Modifier.width(3.dp).height(13.dp).background(Signal, RoundedCornerShape(2.dp)))
+            Text(title, color = Color(0xFFC9D1DA), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp, modifier = Modifier.padding(start = 8.dp))
+        }
+        content()
     }
 }
 
@@ -307,7 +368,7 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
     val fill = when {
         primary -> Signal
         focused -> Accent
-        else -> Panel
+        else -> IdleButton
     }
     Text(
         label,
@@ -320,13 +381,13 @@ private fun Chip(label: String, primary: Boolean = false, requester: FocusReques
                 focused = it.isFocused
                 if (it.isFocused) scope.launch { bring.bringIntoView() }
             }
-            .tap { onClick() }
             .onKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
                     onClick()
                     true
                 } else false
             }
+            .tap { onClick() }
             .focusable()
             .themedButton(fill, focused)
             .padding(horizontal = 12.dp, vertical = 9.dp),

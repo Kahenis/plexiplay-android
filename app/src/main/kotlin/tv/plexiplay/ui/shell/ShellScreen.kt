@@ -871,6 +871,8 @@ private fun GearButton(selected: Boolean, active: Boolean, onClick: () -> Unit) 
     var pressing by remember { mutableStateOf(false) }
     var fired by remember { mutableStateOf(false) }
     var egg by remember { mutableStateOf(false) }
+    // 0 : rien, 1 : animation, 2 : proposition, 3 : vidéos d'intros
+    var eggStage by remember { mutableStateOf(0) }
     // Appui prolongé (5 s) : animation cachée, puis les paramètres s'ouvrent normalement.
     LaunchedEffect(pressing) {
         if (pressing) {
@@ -879,15 +881,20 @@ private fun GearButton(selected: Boolean, active: Boolean, onClick: () -> Unit) 
             egg = true
         }
     }
+    fun finishEgg() {
+        eggStage = 0
+        egg = false
+        pressing = false
+        fired = false
+        onClick()
+    }
     if (egg) {
-        LogoEgg(onDone = {
-            if (egg) {
-                egg = false
-                pressing = false
-                fired = false
-                onClick()
-            }
-        })
+        when (eggStage) {
+            2 -> IntroOffer(onYes = { eggStage = 3 }, onNo = { finishEgg() })
+            3 -> IntroPlayer(onClose = { finishEgg() })
+            // Mobile : pas de proposition des vidéos d'intros (propre à la TV), les paramètres s'ouvrent après l'animation.
+            else -> LogoEgg(onDone = { finishEgg() })
+        }
     }
     val color = if (focused || selected) Accent else Paper
     Canvas(

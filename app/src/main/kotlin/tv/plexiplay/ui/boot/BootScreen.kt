@@ -45,9 +45,15 @@ fun BootScreen(progress: Float, versionName: String) {
                 fontSize = 16.sp,
                 modifier = Modifier.padding(top = 22.dp),
             )
+            Text(
+                "Optimisé pour Nazgul",
+                color = Color(0xFF9AA3AD),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 16.dp),
+            )
             Box(
                 Modifier
-                    .padding(top = 22.dp)
+                    .padding(top = 10.dp)
                     .width(280.dp)
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp))

@@ -29,6 +29,8 @@ object StreamUrlFactory {
         hevcOutput: Boolean = false,
         // Son converti : jusqu'à 6 canaux (5.1), comme l'appli officielle. Sans cela le serveur mélange en stéréo.
         maxAudioChannels: Int? = null,
+        // Gain du son converti (100 = normal).
+        audioBoost: Int = 100,
     ): String {
         val base = serverUri.trimEnd('/') + "/video/:/transcode/universal/start.m3u8"
         val q = mutableListOf(
@@ -40,6 +42,8 @@ object StreamUrlFactory {
             "directStream=${if (directStream) 1 else 0}",
             "fastSeek=1",
             "session=" + enc(session),
+            // Même identifiant que les rapports de lecture (/:/timeline) : le serveur relie ainsi la conversion à la session « Lecture en cours ».
+            "X-Plex-Session-Identifier=" + enc(session),
             "X-Plex-Platform=Android",
             "X-Plex-Product=Plexiplay",
             "X-Plex-Client-Identifier=" + enc(clientId),
@@ -56,11 +60,13 @@ object StreamUrlFactory {
         if (!videoCodec.isNullOrBlank()) q += "videoCodec=" + enc(videoCodec)
         if (!audioCodec.isNullOrBlank()) q += "audioCodec=" + enc(audioCodec)
         if (maxAudioChannels != null && maxAudioChannels > 0) q += "maxAudioChannels=$maxAudioChannels"
+        if (audioBoost > 100) q += "audioBoost=$audioBoost"
+        val extras = mutableListOf<String>()
         if (directStream || hevcOutput) {
             // Autorise le serveur à copier l'image HEVC (HDR) au lieu de la convertir en H.264.
-            q += "X-Plex-Client-Profile-Extra=" +
-                enc("append-transcode-target-codec(type=videoProfile&context=streaming&protocol=hls&videoCodec=h264,hevc)")
+            extras += "append-transcode-target-codec(type=videoProfile&context=streaming&protocol=hls&videoCodec=h264,hevc)"
         }
+        if (extras.isNotEmpty()) q += "X-Plex-Client-Profile-Extra=" + enc(extras.joinToString("+"))
         return base + "?" + q.joinToString("&")
     }
 

@@ -27,8 +27,13 @@ class SessionStore(context: Context) {
     fun saveToken(token: String) = prefs.edit().putString(KEY_TOKEN, token).apply()
 
     fun clearSession() {
-        prefs.edit().remove(KEY_TOKEN).remove(KEY_SERVERS).remove(KEY_SERVER).apply()
+        prefs.edit().remove(KEY_TOKEN).remove(KEY_SERVERS).remove(KEY_SERVER).remove("account_name").apply()
     }
+
+    /** Nom du compte Plex affiché dans les paramètres (mémorisé pour l'afficher tout de suite). */
+    fun accountName(): String = prefs.getString("account_name", "").orEmpty()
+
+    fun saveAccountName(name: String) = prefs.edit().putString("account_name", name).apply()
 
     fun servers(): List<ServerEndpoint> {
         val raw = prefs.getString(KEY_SERVERS, null) ?: return emptyList()
@@ -71,6 +76,9 @@ class SessionStore(context: Context) {
         trailerCount = 0,
         compatMode = prefs.getString(KEY_COMPAT, "auto") ?: "auto",
         mpvMode = "light",
+        audioBoost = prefs.getInt("audio_boost", 100),
+        convertTitles = prefs.getStringSet("convert_titles", emptySet()).orEmpty().toSet(),
+        boxFullHd = prefs.getBoolean("box_fullhd", false),
         formatFix = prefs.getBoolean(KEY_FORMAT_FIX, true),
         compat = prefs.getString(KEY_COMPAT, "auto") == "on",
         compatTitles = if ((prefs.getString(KEY_COMPAT, "auto") ?: "auto") == "auto") {
@@ -79,6 +87,13 @@ class SessionStore(context: Context) {
             emptySet()
         },
         )
+    }
+
+    /** Conversion complète par le serveur pour ce film : case « Forcer la conversion » ou repli automatique. */
+    fun setConvert(ratingKey: String, on: Boolean) {
+        if (ratingKey.isBlank()) return
+        val next = prefs.getStringSet("convert_titles", emptySet()).orEmpty().toMutableSet().apply { if (on) add(ratingKey) else remove(ratingKey) }
+        prefs.edit().putStringSet("convert_titles", next).apply()
     }
 
     /** Appelé quand la lecture a bloqué : le mode automatique devient compatible pour cet appareil. */
@@ -110,6 +125,28 @@ class SessionStore(context: Context) {
         prefs.edit().putInt("theme_volume2", value.coerceIn(0, 60)).apply()
     }
 
+    /** Fin de la pause des prerolls (ms), 0 si aucune pause active. */
+    fun prerollPauseUntil(): Long = prefs.getLong("preroll_pause_until", 0L).takeIf { it > System.currentTimeMillis() } ?: 0L
+
+    /**
+     * Pause de 7 jours. Si une pause annulée avait une date de fin non atteinte, c'est cette date qui est reprise ;
+     * sinon (aucune, ou dépassée) 7 nouveaux jours démarrent maintenant.
+     */
+    fun startPrerollPause(): Long {
+        val now = System.currentTimeMillis()
+        val saved = prefs.getLong("preroll_pause_saved", 0L)
+        val until = if (saved > now) saved else now + 7L * 24 * 60 * 60 * 1000
+        prefs.edit().putLong("preroll_pause_until", until).putLong("preroll_pause_saved", 0L).apply()
+        return until
+    }
+
+    /** Annule la pause en cours en gardant sa date de fin pour une éventuelle reprise. */
+    fun cancelPrerollPause() {
+        val until = prefs.getLong("preroll_pause_until", 0L)
+        prefs.edit().putLong("preroll_pause_saved", if (until > System.currentTimeMillis()) until else 0L)
+            .putLong("preroll_pause_until", 0L).apply()
+    }
+
     /** Volume des prerolls (annonces avant le film), de 20 à 100 %, 75 % par défaut. */
     fun prerollVolume(): Int = prefs.getInt("preroll_volume", 75).coerceIn(20, 100)
 
@@ -135,6 +172,8 @@ class SessionStore(context: Context) {
             .putString(KEY_COMPAT, settings.compatMode)
             .putString(KEY_MPV_MODE, settings.mpvMode)
             .putBoolean(KEY_FORMAT_FIX, settings.formatFix)
+            .putInt("audio_boost", settings.audioBoost)
+            .putBoolean("box_fullhd", settings.boxFullHd)
             .apply()
         if (settings.compatMode != "auto") prefs.edit().remove(KEY_COMPAT_TITLES).apply()
     }

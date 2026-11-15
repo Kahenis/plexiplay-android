@@ -68,6 +68,17 @@ data class StreamInfo(
     val languageCode: String = "",
     val index: Int = -1,
     val key: String = "",
+    // Détails de l'image (streamType 1) : servent à repérer le 10 bits / HDR et au panneau de diagnostic.
+    val profile: String = "",
+    val level: Int = 0,
+    val bitDepth: Int = 0,
+    val colorTrc: String = "",
+    val colorSpace: String = "",
+    val frameRate: Float = 0f,
+    val width: Int = 0,
+    val height: Int = 0,
+    val bitrate: Int = 0,
+    val DOVIPresent: Boolean = false,
 )
 
 @Serializable
@@ -89,6 +100,8 @@ data class MediaInfo(
     val width: Int = 0,
     val height: Int = 0,
     val videoResolution: String = "",
+    val videoProfile: String = "",
+    val videoFrameRate: String = "",
     val Part: List<MediaPart> = emptyList(),
 )
 

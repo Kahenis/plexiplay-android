@@ -24,6 +24,12 @@ data class PlaybackSettings(
     val formatFix: Boolean = true,
     /** Films pour lesquels le repli automatique s'est déclenché (mode automatique seulement). */
     val compatTitles: Set<String> = emptySet(),
+    /** Gain demandé au serveur pour le son converti (100 = normal). */
+    val audioBoost: Int = 100,
+    /** Films lus en conversion complète par le serveur (case « Forcer la conversion » ou repli automatique). */
+    val convertTitles: Set<String> = emptySet(),
+    /** Box d'opérateur sur TV Full HD : image 4K ou HDR / 10 bits convertie en H.264 8 bits SDR, 1080p maximum. */
+    val boxFullHd: Boolean = false,
 )
 
 data class CodecEntry(

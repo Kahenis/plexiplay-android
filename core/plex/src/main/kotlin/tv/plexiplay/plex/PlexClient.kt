@@ -54,6 +54,23 @@ class PlexClient(
         }
     }
 
+    /** Nom affiché du compte Plex (profil, sinon identifiant, sinon adresse e-mail) ; null si indisponible. */
+    fun accountName(token: String): String? = runCatching {
+        val quick = http.newBuilder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).build()
+        val request = Request.Builder().url("https://plex.tv/api/v2/user").get()
+            .let { PlexHeaders.apply(it, clientId, token, deviceName) }
+            .header("Accept", "application/json")
+            .build()
+        val raw = quick.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@runCatching null
+            response.body?.string().orEmpty()
+        }
+        val obj = json.parseToJsonElement(raw).jsonObject
+        listOf("title", "friendlyName", "username", "email")
+            .mapNotNull { obj[it]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { v -> v.isNotBlank() } }
+            .firstOrNull()
+    }.getOrNull()
+
     /** Invitations reçues (demande d'ami, partage de bibliothèques). Vide s'il n'y en a pas. */
     fun invites(token: String): List<PlexInvite> {
         val request = Request.Builder().url("https://plex.tv/api/invites/requests").get()
@@ -214,9 +231,10 @@ class PlexClient(
         return metadataList(raw).firstOrNull()
     }
 
+    /** Bonus du film ; les clips identifiables comme français passent devant (à défaut, l'ordre de Plex est conservé). */
     fun extras(server: ServerEndpoint, ratingKey: String): List<Metadata> {
-        val raw = get("${server.uri}/library/metadata/$ratingKey/extras", server.accessToken)
-        return metadataList(raw)
+        val raw = get("${server.uri}/library/metadata/$ratingKey/extras", server.accessToken, language = "fr")
+        return metadataList(raw).sortedByDescending { if (it.isFrenchClip()) 1 else 0 }
     }
 
     fun preference(server: ServerEndpoint, id: String): String? = runCatching {
@@ -548,3 +566,18 @@ data class PersonInfo(
     val fromWikipedia: Boolean = false,
 )
 
+/** Clip français : piste audio « fra » dans le fichier, ou titre / nom de fichier qui l'indique (VF, français, bande-annonce). */
+fun Metadata.isFrenchClip(): Boolean {
+    val audioFrench = Media.any { media ->
+        media.Part.any { part ->
+            part.Stream.any { st ->
+                st.streamType == 2 && (st.languageCode.lowercase() in setOf("fra", "fre", "fr") ||
+                    st.languageTag.lowercase().startsWith("fr") ||
+                    st.language.lowercase().let { it.startsWith("fran") || it == "french" })
+            }
+        }
+    }
+    if (audioFrench) return true
+    val text = (title + " " + Media.flatMap { m -> m.Part.map { it.file } }.joinToString(" ")).lowercase()
+    return Regex("""(\bvf\b|\bvff\b|fran[cç]ais|bande[- ]annonce|\(fr\)|\[fr\]|[ ._-]fr[ ._-])""").containsMatchIn(text)
+}

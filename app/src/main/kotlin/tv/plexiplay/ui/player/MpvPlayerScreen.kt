@@ -121,6 +121,7 @@ internal fun MpvPlayerScreen(
     onAudioChosen: (ClipPlay) -> Unit = {},
     onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
     prerollVolume: Float = 0.75f,
+    onCompat: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var notice by remember { mutableStateOf("") }
@@ -136,6 +137,9 @@ internal fun MpvPlayerScreen(
         }
     }
     var infoVisible by remember { mutableStateOf(false) }
+    // Page du panneau « i » : 0 = lecture, 1 = diagnostic (un nouvel appui sur « i » passe à la page suivante, puis ferme).
+    var infoPage by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val shown = remember { mutableStateOf(false) }
     var pulse by remember { mutableIntStateOf(0) }
     var position by remember { mutableLongStateOf(0L) }
@@ -145,6 +149,7 @@ internal fun MpvPlayerScreen(
     var bitsPerSecond by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
     var mpvStats by remember { mutableStateOf("") }
+    var mpvLive by remember { mutableStateOf<List<InfoLine>>(emptyList()) }
     var index by remember { mutableIntStateOf(0) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -192,11 +197,27 @@ internal fun MpvPlayerScreen(
     var lastDuration by remember { mutableStateOf(0L) }
     LaunchedEffect(screen) {
         val view = screen ?: return@LaunchedEffect
+        // Surveillance : pas d'image 12 s après le début du film (ou rien de lu), l'application relance le film en conversion complète.
+        var noPicture = 0
+        var nothingYet = 0
+        var fallbackDone = false
         while (true) {
             val core = view.mpv
             if (core != null) {
                 val pos = core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: 0
                 val clip = clips.getOrNull(pos)
+                if (clip != null && clip.kind == ClipKind.FEATURE && !fallbackDone) {
+                    val shownWidth = core[MpvProperties.Width].getOrNull()?.toInt() ?: 0
+                    val playedMs = ((core[MpvProperties.TimePos].getOrNull() ?: 0.0) * 1000).toLong()
+                    val paused = core[MpvProperties.Pause].getOrNull() == true
+                    // Le temps avance sans image : 12 s ; rien de lu du tout : 25 s (un démarrage lent ne doit pas déclencher la conversion).
+                    if (!paused && playedMs > 0L && shownWidth <= 0) noPicture += 1 else noPicture = 0
+                    if (!paused && playedMs <= 0L) nothingYet += 1 else nothingYet = 0
+                    if ((noPicture >= 12 || nothingYet >= 25) && clips.none { it.expectAudio.isNotBlank() }) {
+                        fallbackDone = true
+                        onCompat()
+                    }
+                }
                 // Fin de lecture complète d'un film : retour à l'écran d'où il a été lancé.
                 val ended = core.getString("eof-reached") == "yes" || core.getString("idle-active") == "yes"
                 if (ended && lastKey.isNotEmpty() && lastDuration > 0L && lastPosition >= lastDuration * 9 / 10 &&
@@ -250,6 +271,30 @@ internal fun MpvPlayerScreen(
                     "perdues affichage ${core.getString("frame-drop-count").orEmpty()} · " +
                     "en retard ${core.getString("vo-delayed-frame-count").orEmpty()} · " +
                     "écran ${core.getString("display-fps").orEmpty().take(5)} Hz"
+                if (infoVisible) {
+                    fun prop(name: String) = core.getString(name).orEmpty().trim()
+                    val live = mutableListOf<InfoLine>()
+                    live += "Image" to ""
+                    val format = prop("video-format")
+                    val fps = prop("estimated-vf-fps").take(5)
+                    val gamma = prop("video-params/gamma")
+                    val hdr = when {
+                        gamma.contains("pq", true) -> " · HDR10"
+                        gamma.contains("hlg", true) -> " · HLG"
+                        else -> ""
+                    }
+                    live += "Flux reçu" to "${codecLabel(format)} ${pictureWidth}×${pictureHeight}" + (if (fps.isNotBlank()) " · $fps i/s" else "") + hdr
+                    val hwdec = prop("hwdec-current")
+                    live += "Décodeur" to if (hwdec.isBlank() || hwdec == "no") "FFmpeg (logiciel)" else "$hwdec (matériel TV)"
+                    live += "Images" to "perdues décodeur ${prop("decoder-frame-drop-count").ifBlank { "0" }} · perdues affichage ${prop("frame-drop-count").ifBlank { "0" }}"
+                    live += "Réseau" to "${rateLabel(bitsPerSecond)} · tampon ${prop("demuxer-cache-duration").take(5).ifBlank { "0" }} s"
+                    live += "Son" to ""
+                    val audioName = prop("audio-codec-name")
+                    val channels = prop("audio-params/channel-count").toIntOrNull() ?: 0
+                    live += "Flux reçu" to listOf(codecLabel(audioName), channelsLabel(channels)).filter { it.isNotBlank() }.joinToString(" ")
+                    live += "Décodeur" to "FFmpeg (mpv)"
+                    mpvLive = live
+                }
                 index = core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: index
                 val clip = clips.getOrNull(index)
                 if (clip?.kind == ClipKind.FEATURE) {
@@ -590,31 +635,12 @@ internal fun MpvPlayerScreen(
                 },
             )
         }
-        if (infoVisible && mpvStats.isNotEmpty()) {
-            Text(
-                mpvStats,
-                color = Color(0xFF9AA3AD),
-                fontSize = 13.sp,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 28.dp, bottom = 20.dp),
-            )
-        }
         if (infoVisible) {
-            PlaybackFacts(
-                clips.getOrNull(index),
-                pictureWidth,
-                pictureHeight,
-                bitsPerSecond,
-                Modifier.align(Alignment.TopStart),
-            )
-        }
-        if (infoVisible) {
-            val clip = clips.getOrNull(index)
-            val text = if (clip == null) "" else listOf(
-                "Appli ${tv.plexiplay.plex.PlexHeaders.VERSION} · mpv · " + (if (clip.direct) "direct" else "converti"),
-                "ST appli : départ=${clip.subStart} choisi=${pickedSub[index]} liste=${clip.subs.size} message=\"$notice\"",
-                clip.diag,
-            ).joinToString("\n")
-            SubDiagnostic(text, Modifier.align(Alignment.TopEnd))
+            if (infoPage == 0) {
+                InfoPanel(playbackLines(clips.getOrNull(index), "mpv") + mpvLive, Modifier.align(Alignment.TopStart))
+            } else {
+                InfoPanel(diagnosticLines(context, clips.getOrNull(index), mpvLive + ("Mesures mpv" to mpvStats)), Modifier.align(Alignment.TopStart), twoColumns = true)
+            }
         }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
@@ -683,7 +709,14 @@ internal fun MpvPlayerScreen(
                         reveal()
                     }
                     PlayerIcon(Glyph.Info) {
-                        infoVisible = !infoVisible
+                        if (!infoVisible) {
+                            infoVisible = true
+                            infoPage = 0
+                        } else if (infoPage == 0) {
+                            infoPage = 1
+                        } else {
+                            infoVisible = false
+                        }
                         reveal()
                     }
                     PlayerIcon(Glyph.Skip) {

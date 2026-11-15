@@ -13,8 +13,8 @@ android {
         applicationId = "tv.plexiplay.mobile"
         minSdk = 23
         targetSdk = 35
-        versionCode = 158
-        versionName = "1.5.8"
+        versionCode = 160
+        versionName = "1.6.0"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -76,6 +76,8 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
+    // Décodage logiciel (FFmpeg) pour ExoPlayer, version Jellyfin compatible Media3 1.9.0 (licence GPLv3).
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
     implementation(libs.okhttp)
     implementation("com.google.zxing:core:3.5.3")
     implementation(libs.kotlinx.serialization.json)

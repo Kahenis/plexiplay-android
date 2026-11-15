@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +33,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -42,7 +45,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -71,6 +73,7 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
     var login by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var verification by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
     var needsCode by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("Création du code…") }
     var submit by remember { mutableStateOf(false) }
@@ -139,46 +142,54 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
     val form: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
             Text("Plexiplay", color = Accent, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Text("Connexion au compte", color = Paper, fontSize = if (narrow) 28.sp else 40.sp, fontWeight = FontWeight.Bold)
-            Text(
-                code.padEnd(4, '·').take(4),
-                color = Paper,
-                fontSize = if (narrow) 48.sp else 64.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = if (narrow) 10.sp else 16.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 16.dp),
-            )
+            // En mode e-mail, le gros code et les aides sont masqués pour laisser la place aux champs.
+            if (!classic) {
+                Text(
+                    code.padEnd(4, '·').take(4),
+                    color = Paper,
+                    fontSize = if (narrow) 48.sp else 64.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = if (narrow) 10.sp else 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
             Text(message, color = Color(0xFF9AA3AD), fontSize = if (narrow) 15.sp else 20.sp, modifier = Modifier.padding(top = 8.dp))
-            Text(
-                "Google, Apple ou e-mail : choisissez-les sur la page plex.tv/link ou avec le QR code.",
-                color = Color(0xFF9AA3AD),
-                fontSize = 16.sp,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            if (qrUrl.isNotBlank()) {
-                Chip("Se connecter dans le navigateur", primary = true, modifier = Modifier.padding(top = 20.dp)) {
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(qrUrl))
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
+            if (!classic) {
+                Text(
+                    "Google, Apple ou e-mail : choisissez-les sur la page plex.tv/link ou avec le QR code.",
+                    color = Color(0xFF9AA3AD),
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                if (qrUrl.isNotBlank()) {
+                    Chip("Se connecter dans le navigateur", primary = true, modifier = Modifier.padding(top = 20.dp)) {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(qrUrl))
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
                     }
                 }
             }
-            Row(modifier = Modifier.padding(top = if (narrow) 14.dp else 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(modifier = Modifier.padding(top = if (classic || narrow) 14.dp else 28.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Chip("Nouveau code") { attempt += 1 }
                 Chip(if (classic) "Masquer l'e-mail" else "E-mail et mot de passe") { classic = !classic }
             }
             if (classic) {
-                Text("Adresse e-mail ou identifiant", color = Paper, modifier = Modifier.padding(top = 20.dp))
+                Text("Adresse e-mail ou identifiant", color = Paper, modifier = Modifier.padding(top = 14.dp))
                 Field(login) { login = it }
                 Text("Mot de passe", color = Paper, modifier = Modifier.padding(top = 12.dp))
-                Field(password, secret = true) { password = it }
+                Field(password, secret = !showPassword) { password = it }
+                Row(Modifier.padding(top = 8.dp)) {
+                    Chip(if (showPassword) "Masquer le mot de passe" else "Afficher le mot de passe") { showPassword = !showPassword }
+                }
                 if (needsCode) {
                     Text("Code de vérification (6 chiffres)", color = Paper, modifier = Modifier.padding(top = 12.dp))
                     Field(verification) { verification = it.filter { ch -> ch.isDigit() }.take(8) }
                 }
-                Row(Modifier.padding(top = 12.dp)) { Chip("Valider", primary = true) { submit = true } }
+                Row(Modifier.padding(top = 12.dp, bottom = 24.dp)) { Chip("Valider", primary = true) { submit = true } }
             }
     }
     if (narrow) {
@@ -194,7 +205,10 @@ fun LoginScreen(auth: PinAuthClient, onToken: (String) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+        Column(
+            Modifier.weight(1f).fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+        ) {
             form()
         }
         if (qrUrl.isNotBlank()) {
@@ -259,12 +273,22 @@ private fun Chip(label: String, primary: Boolean = false, modifier: Modifier = M
 
 @Composable
 private fun Field(value: String, secret: Boolean = false, onValue: (String) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
         onValueChange = onValue,
         singleLine = true,
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         textStyle = TextStyle(color = Paper, fontSize = 22.sp),
-        modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = 6.dp).background(Panel).padding(12.dp).focusable(),
+        cursorBrush = SolidColor(Accent),
+        modifier = Modifier
+            .widthIn(max = 420.dp)
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .border(2.dp, if (focused) FocusRing else Color(0xFF3A424C), RoundedCornerShape(8.dp))
+            .background(if (focused) Color(0xFF2B323B) else Panel, RoundedCornerShape(8.dp))
+            .padding(12.dp)
+            .focusable(),
     )
 }

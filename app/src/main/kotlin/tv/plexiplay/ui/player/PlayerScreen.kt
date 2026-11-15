@@ -111,6 +111,8 @@ data class ClipPlay(
     val streamFor: ((Int, Int) -> String)? = null,
     /** Texte de diagnostic (panneau « i ») : versions du film, pistes de sous-titres vues par Plex, choix de départ. */
     val diag: String = "",
+    /** Détails du fichier d'origine pour la page Diagnostic du panneau « i » (libellé, valeur ; valeur vide = titre de section). */
+    val fileLines: List<Pair<String, String>> = emptyList(),
     /** Langue audio demandée après un changement de piste (relance complète) : le lecteur vérifie qu'elle est bien jouée. */
     val expectAudio: String = "",
 )
@@ -142,10 +144,14 @@ fun PlayerScreen(
     onReload: suspend (ClipPlay, Int, Int, Long, String) -> Boolean = { _, _, _, _, _ -> false },
 ) {
     if (playerKind == PlayerKind.MPV) {
-        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume)
+        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen, prerollVolume = prerollVolume, onCompat = onCompat)
         return
     }
     var infoVisible by remember { mutableStateOf(false) }
+    // Page du panneau « i » : 0 = lecture, 1 = diagnostic (un nouvel appui sur « i » passe à la page suivante, puis ferme).
+    var infoPage by remember { mutableStateOf(0) }
+    val fpsMark = remember { longArrayOf(0L, 0L) }
+    val fpsValue = remember { floatArrayOf(0f) }
     var status by remember { mutableStateOf(clips.firstOrNull()?.label ?: "") }
     var notice by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<PendingChange?>(null) }
@@ -169,6 +175,8 @@ fun PlayerScreen(
     // Diagnostic vidéo (panneau « i ») : décodeur choisi par la TV et nombre de coupures de lecture (tampon vide en cours de film).
     var decoderName by remember { mutableStateOf("") }
     var rebuffers by remember { mutableIntStateOf(0) }
+    var audioDecoderName by remember { mutableStateOf("") }
+    var audioPassthrough by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf(true) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -220,7 +228,7 @@ fun PlayerScreen(
             .setMediaCodecSelector(selector)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(
-                if (engine == Engine.TV) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                if (engine == Engine.TV) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                 else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
             )
         val token = clips.firstNotNullOfOrNull { clip ->
@@ -234,6 +242,15 @@ fun PlayerScreen(
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)))
             .build().apply {
+            // Écouteur branché avant le démarrage : sinon le nom des décodeurs, reçu très tôt, est manqué.
+            addAnalyticsListener(object : AnalyticsListener {
+                override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, name: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                    decoderName = name
+                }
+                override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, name: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                    audioDecoderName = name
+                }
+            })
             val startIndex = clips.indexOfFirst { it.startMs > 0L }.coerceAtLeast(0)
             val startAt = clips.getOrNull(startIndex)?.startMs ?: 0L
             val items = clips.map { clip ->
@@ -587,6 +604,64 @@ fun PlayerScreen(
         lines += clip.diag
         return lines.joinToString("\n")
     }
+    // Panneau « i » : informations de lecture lisibles (mode, image, décodeur, images perdues, son, sous-titres).
+    fun infoLines(): List<InfoLine> {
+        val index = player.currentMediaItemIndex
+        val lines = playbackLines(effective(index), "ExoPlayer").toMutableList()
+        lines += "Image" to ""
+        val video = player.videoFormat
+        if (video != null) {
+            val hdr = when (video.colorInfo?.colorTransfer) {
+                6 -> " · HDR10"
+                7 -> " · HLG"
+                else -> ""
+            }
+            lines += "Flux reçu" to "${codecLabel(video.sampleMimeType)} ${video.width}×${video.height}" +
+                (if (video.frameRate > 0f) " · %.2f i/s".format(video.frameRate) else "") + hdr
+        }
+        lines += "Décodeur" to decoderKind(decoderName)
+        val counters = player.videoDecoderCounters?.also { it.ensureUpdated() }
+        lines += "Images" to "affichées ${counters?.renderedOutputBufferCount ?: 0} · perdues ${counters?.droppedBufferCount ?: 0}"
+        lines += "Réseau" to "${rateLabel(bitsPerSecond)} · tampon ${player.totalBufferedDuration / 1000} s · coupures $rebuffers"
+        lines += "Son" to ""
+        val audio = player.audioFormat
+        if (audio != null) {
+            lines += "Flux reçu" to listOf(codecLabel(audio.sampleMimeType), channelsLabel(audio.channelCount)).filter { it.isNotBlank() }.joinToString(" ")
+        }
+        lines += "Décodeur" to if (audioPassthrough) "passthrough (envoyé tel quel à la TV ou à l'ampli)" else decoderKind(audioDecoderName)
+        if (lastError.isNotBlank()) lines += "Erreur" to lastError
+        return lines
+    }
+    fun diagLive(): List<InfoLine> {
+        val lines = mutableListOf<InfoLine>()
+        lines += "Mesures de lecture" to ""
+        val counters = player.videoDecoderCounters?.also { it.ensureUpdated() }
+        val now = android.os.SystemClock.elapsedRealtime()
+        val rendered = (counters?.renderedOutputBufferCount ?: 0).toLong()
+        if (fpsMark[0] == 0L || rendered < fpsMark[1]) {
+            fpsMark[0] = now
+            fpsMark[1] = rendered
+        } else if (now - fpsMark[0] >= 900L) {
+            fpsValue[0] = (rendered - fpsMark[1]) * 1000f / (now - fpsMark[0])
+            fpsMark[0] = now
+            fpsMark[1] = rendered
+        }
+        val video = player.videoFormat
+        lines += "Cadence" to "affichée %.1f i/s".format(fpsValue[0]) + (if (video != null && video.frameRate > 0f) " · fichier %.2f i/s".format(video.frameRate) else "")
+        lines += "Images" to "perdues ${counters?.droppedBufferCount ?: 0} · sautées ${counters?.skippedOutputBufferCount ?: 0} · max de suite ${counters?.maxConsecutiveDroppedBufferCount ?: 0}"
+        lines += "Flux image" to (video?.let { "${codecLabel(it.sampleMimeType)} ${it.width}×${it.height} · " + (if (it.bitrate > 0) "%.1f Mbit/s".format(it.bitrate / 1_000_000f) else "débit ?") } ?: "?")
+        lines += "Réseau" to "${rateLabel(bitsPerSecond)} · tampon ${player.totalBufferedDuration / 1000} s · coupures $rebuffers"
+        lines += "Décodeur" to decoderKind(decoderName)
+        lines += "État" to when (player.playbackState) {
+            Player.STATE_IDLE -> "inactif"
+            Player.STATE_BUFFERING -> "chargement"
+            Player.STATE_READY -> if (player.playWhenReady) "lecture" else "pause"
+            Player.STATE_ENDED -> "terminé"
+            else -> "?"
+        }
+        if (lastError.isNotBlank()) lines += "Erreur" to lastError
+        return lines
+    }
     // Un clic sur ST : sous-titre suivant (Sans → chaque piste → Sans). Le changement est appliqué quand les clics s'arrêtent.
     fun cycleSub() {
         val index = player.currentMediaItemIndex
@@ -669,7 +744,7 @@ fun PlayerScreen(
                     PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
                     PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
                 )
-                if (clip.kind == ClipKind.FEATURE && !compat && decoderTrouble) {
+                if (clip.kind == ClipKind.FEATURE && decoderTrouble) {
                     onCompat()
                     return
                 }
@@ -714,6 +789,22 @@ fun PlayerScreen(
                 initializationDurationMs: Long,
             ) {
                 diagDecoder(decoderName)
+            }
+
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                audioDecoderName = decoderName
+            }
+
+            override fun onAudioTrackInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+            ) {
+                audioPassthrough = !androidx.media3.common.util.Util.isEncodingLinearPcm(audioTrackConfig.encoding)
             }
 
             override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
@@ -790,14 +881,28 @@ fun PlayerScreen(
         }
     }
 
-    // Surveillance : si le film n'avance pas après 20 s, on bascule seul en mode compatible.
+    // Surveillance : pas d'image 12 s après que le lecteur soit prêt (ou 25 s en tout), le film est relancé par l'application
+    // (mode compatible si cela peut aider, sinon conversion complète par le serveur ; la suite est décidée dans MainActivity).
     LaunchedEffect(player) {
-        if (compat) return@LaunchedEffect
-        // Film relancé après un changement de piste : pas de retour automatique au mode compatible (le « i » doit montrer le vrai flux).
+        // Film relancé après un changement de piste : pas de retour automatique (le « i » doit montrer le vrai flux).
         if (clips.any { it.expectAudio.isNotBlank() }) return@LaunchedEffect
-        delay(25000)
-        val clip = clips.getOrNull(player.currentMediaItemIndex)
-        if (clip?.kind == ClipKind.FEATURE && player.playWhenReady && !firstFrame.value) onCompat()
+        var readyNoPicture = 0
+        var anyNoPicture = 0
+        while (true) {
+            delay(1000)
+            val clip = clips.getOrNull(player.currentMediaItemIndex)
+            if (clip?.kind == ClipKind.FEATURE && player.playWhenReady && !firstFrame.value) {
+                anyNoPicture += 1
+                if (player.playbackState == Player.STATE_READY) readyNoPicture += 1 else readyNoPicture = 0
+                if (readyNoPicture >= 12 || anyNoPicture >= 25) {
+                    onCompat()
+                    return@LaunchedEffect
+                }
+            } else {
+                readyNoPicture = 0
+                anyNoPicture = 0
+            }
+        }
     }
 
     // Vérification d'un changement de piste en flux converti : le nouveau flux doit démarrer avec la langue demandée.
@@ -1118,18 +1223,15 @@ fun PlayerScreen(
             )
         }
         if (infoVisible) {
-            PlaybackFacts(
-                effective(player.currentMediaItemIndex),
-                pictureWidth,
-                pictureHeight,
-                bitsPerSecond,
-                Modifier.align(Alignment.TopStart),
-            )
-        }
-        if (infoVisible) {
-            // Relu à chaque affichage de la barre (position mise à jour toutes les 400 ms) : le texte suit l'état réel.
-            val diagnostic = remember(position, notice, lastChange, lastError, probe, tick, pictureWidth, player.currentMediaItemIndex) { subDiag() }
-            SubDiagnostic(diagnostic, Modifier.align(Alignment.TopEnd))
+            // Relu à chaque mise à jour de la position (toutes les 400 ms) : les chiffres suivent l'état réel.
+            val panel = remember(position, tick, lastError, bitsPerSecond, pictureWidth, audioDecoderName, audioPassthrough, decoderName, player.currentMediaItemIndex, infoPage) {
+                if (infoPage == 0) {
+                    infoLines()
+                } else {
+                    diagnosticLines(context, effective(player.currentMediaItemIndex), diagLive())
+                }
+            }
+            InfoPanel(panel, Modifier.align(Alignment.TopStart), twoColumns = infoPage != 0)
         }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
@@ -1175,7 +1277,17 @@ fun PlayerScreen(
                         }
                     }
                     PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }, label = audioTag) { forceFrench(); reveal() }
-                    PlayerIcon(Glyph.Info) { infoVisible = !infoVisible; reveal() }
+                    PlayerIcon(Glyph.Info) {
+                        if (!infoVisible) {
+                            infoVisible = true
+                            infoPage = 0
+                        } else if (infoPage == 0) {
+                            infoPage = 1
+                        } else {
+                            infoVisible = false
+                        }
+                        reveal()
+                    }
                     PlayerIcon(Glyph.Skip) {
                         if (player.currentMediaItemIndex < clips.lastIndex) player.seekToNextMediaItem()
                         reveal()

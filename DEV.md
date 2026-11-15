@@ -71,6 +71,19 @@
 - Rangée « Nouveautés » d'une bibliothèque : même tri par date.
 - La version TV a le même défaut (code identique).
 
+## 1.6.0 : reprise des versions TV 1.4.6 à 1.6.55 (lot 1)
+
+- Méthode : fusion à trois voies, fichier par fichier, des changements TV (`Plexiplay-backup`, `aa25053~1` → `d0df4b6`) dans le code mobile (`git merge-file`), conflits résolus à la main. Le code reste au plus près de la TV pour faciliter les reprises suivantes.
+- Repris tels quels : bandes-annonces françaises en priorité (1.4.6), pause de 7 jours des prerolls et mention « Optimisé pour Nazgul » (1.4.8), paramètres en cadres et mise à jour sur deux lignes (1.4.9, 1.5.0), nom du compte (1.5.1), enchaînement sans fin des épisodes (1.5.4), Media3 1.9.0 + décodeur FFmpeg en repli (licence GPLv3), panneau « i » et page Diagnostic, « Volume du son converti » (1.6.0 à 1.6.5), conversion forcée par film et repli automatique, boutons « 🎬 Trailer » / « Marquer lu » / « Conv. forcée » (1.6.1 à 1.6.3), même session pour la conversion et les rapports de lecture (1.6.55).
+- Adaptations mobile :
+  - Paramètres : fichier TV 1.6.55 repris puis réadapté (pas de « Puissance », `Chip` tactile 14 sp, `Hinted` sur deux lignes sous 700 dp, lignes de mise à jour et de pause des prerolls en `FlowRow`). « Box Player sur TV FullHD » masqué (code présent, Non par défaut).
+  - Connexion : mise en page mobile gardée ; en mode e-mail le gros code, l'aide et le bouton navigateur sont masqués (TV 1.5.2) ; champs avec contour au focus (1.5.3) ; colonne défilante aussi sur tablette.
+  - Fiche film : « Conv. forcée » en tête de la rangée des choix (avant Résolution).
+  - Panneau « i » : largeur limitée à l'écran, défilement ; Diagnostic sur deux colonnes seulement si l'écran fait plus de ~1 000 dp, sinon une colonne.
+  - Fiche acteur : sélecteur « Wikipédia | Plex » du mobile conservé (le bouton TV n'est pas repris).
+  - Easter egg : pas de proposition des vidéos d'intros (`IntroVideos.kt` présent, inutilisé).
+- Non repris (propres à la TV) : Box Player, TextureView, réglages Philips, barre de temps à la télécommande, focus après lecture, thème Futuriste, manuels, vidéos d'intros.
+
 ---
 
 # Notes de développement (Plexiplay clone)

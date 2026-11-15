@@ -73,6 +73,13 @@ private class ReportState {
     var at: Long = 0L
 }
 
+/** Suivi d'une lecture d'épisodes : dernier épisode de la file en cours et suite préparée en arrière-plan. */
+private class EpisodeRun(val showKey: String, val resolution: String?, val lastKey: String) {
+    @Volatile var loading = false
+    @Volatile var done = false
+    @Volatile var next: List<ClipPlay>? = null
+}
+
 private val timelineExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
 class MainActivity : AppCompatActivity() {
@@ -130,7 +137,22 @@ private fun App(
     remember { tv.plexiplay.ui.theme.ThemeMode.neon = store.theme() == "neon"; true }
     var themeVolume by remember { mutableIntStateOf(store.themeVolume()) }
     var prerollVolume by remember { mutableIntStateOf(store.prerollVolume()) }
+    var prerollPauseUntil by remember { mutableStateOf(store.prerollPauseUntil()) }
+    prerollPauseUntilMs = prerollPauseUntil
     var token by remember { mutableStateOf(store.token()) }
+    var accountName by remember { mutableStateOf(store.accountName()) }
+    LaunchedEffect(token) {
+        val current = token
+        if (current.isNullOrBlank()) {
+            accountName = ""
+            return@LaunchedEffect
+        }
+        val name = withContext(Dispatchers.IO) { client.accountName(current) }
+        if (!name.isNullOrBlank()) {
+            store.saveAccountName(name)
+            accountName = name
+        }
+    }
     var servers by remember { mutableStateOf(store.servers()) }
     var serverIndex by remember { mutableStateOf(store.activeServerIndex()) }
     var settings by remember { mutableStateOf(store.settings()) }
@@ -155,6 +177,7 @@ private fun App(
     var inviteBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choisissez une catégorie") }
     var clips by remember { mutableStateOf<List<ClipPlay>?>(null) }
+    var episodeRun by remember { mutableStateOf<EpisodeRun?>(null) }
     // Dernier lancement depuis la page d'un film : de quoi relancer le film (changement de piste en flux converti).
     var lastPlay by remember { mutableStateOf<Triple<Metadata, String, Boolean>?>(null) }
     var movie by remember { mutableStateOf<Metadata?>(null) }
@@ -495,7 +518,12 @@ private fun App(
                     return@Thread
                 }
                 runOnUi {
-                    if (built.isEmpty()) playError = "Aucun fichier lisible" else clips = built
+                    if (built.isEmpty()) {
+                        playError = "Aucun fichier lisible"
+                    } else {
+                        episodeRun = EpisodeRun(showKey, picked?.resolution, built.last().ratingKey)
+                        clips = built
+                    }
                 }
             }.start()
         }
@@ -708,6 +736,17 @@ private fun App(
                         store.saveThemeVolume(it)
                         themeVolume = it
                     },
+                    accountName = accountName,
+                    prerollPauseUntil = prerollPauseUntil,
+                    onPrerollPause = {
+                        prerollPauseUntil = store.startPrerollPause()
+                        prerollPauseUntilMs = prerollPauseUntil
+                    },
+                    onPrerollResume = {
+                        store.cancelPrerollPause()
+                        prerollPauseUntil = 0L
+                        prerollPauseUntilMs = 0L
+                    },
                     prerollVolume = prerollVolume,
                     onPrerollVolume = {
                         store.savePrerollVolume(it)
@@ -729,6 +768,10 @@ private fun App(
             client = client,
             server = activeServer,
             settings = settings,
+            onForceConvert = { key, on ->
+                store.setConvert(key, on)
+                settings = store.settings()
+            },
             onPlay = { full, resolution, audio, subtitles, resume ->
                 playError = ""
                 lastPlay = Triple(full, resolution, resume)
@@ -782,6 +825,10 @@ private fun App(
             client = client,
             server = activeServer,
             settings = settings,
+            onForceConvert = { key, on ->
+                store.setConvert(key, on)
+                settings = store.settings()
+            },
             onPlay = { full, resolution, audio, subtitles, resume ->
                 playEpisode(showKey, full, EpisodeChoice(resolution, audio, subtitles), resume)
             },
@@ -799,7 +846,13 @@ private fun App(
     if (clips != null) {
       androidx.compose.runtime.key(clips!!.firstOrNull()?.url) {
         val reportState = androidx.compose.runtime.remember { ReportState() }
-        val reportSession = androidx.compose.runtime.remember { java.util.UUID.randomUUID().toString() }
+        // Identifiant de session des rapports : celui du flux converti du film (paramètre « session » de l'adresse), sinon un identifiant neuf.
+        val reportSession = androidx.compose.runtime.remember {
+            clips!!.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE && !it.direct }
+                ?.let { runCatching { android.net.Uri.parse(it.url).getQueryParameter("session") }.getOrNull() }
+                ?.takeIf { it.isNotBlank() }
+                ?: java.util.UUID.randomUUID().toString()
+        }
         PlayerScreen(
             clips = clips!!,
             aspect = settings.aspect,
@@ -807,6 +860,31 @@ private fun App(
             playerKind = settings.player,
             prerollVolume = prerollVolume / 100f,
             onProgress = { key, state, position, duration ->
+                // Enchaînement sans fin des épisodes : pendant le dernier de la file, la suite est préparée ;
+                // à la fin de cet épisode, une nouvelle file prend le relais.
+                val run = episodeRun
+                if (run != null && key == run.lastKey && !run.done) {
+                    if (!run.loading) {
+                        run.loading = true
+                        val wanted = server
+                        val currentSettings = settings
+                        val remembered = store.seriesChoice(run.showKey)
+                        if (wanted != null) {
+                            Thread {
+                                val result = runCatching { buildFollowOn(client, wanted, run, currentSettings, store.clientId(), remembered) }.getOrNull()
+                                if (result == null) run.loading = false else run.next = result
+                            }.start()
+                        }
+                    }
+                    val queued = run.next
+                    if (state == "playing" && duration > 0L && position >= duration - 1500L && !queued.isNullOrEmpty()) {
+                        run.done = true
+                        runOnUi {
+                            episodeRun = EpisodeRun(run.showKey, run.resolution, queued.last().ratingKey)
+                            clips = queued
+                        }
+                    }
+                }
                 val active = server ?: return@PlayerScreen
                 // Rapport au serveur (« Lecture en cours », Tautulli) : tout de suite quand l'état change,
                 // sinon toutes les 10 s, dans l'ordre, avec un identifiant de session propre à cette lecture.
@@ -893,8 +971,15 @@ private fun App(
                 val featureClip = clips?.firstOrNull { it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE }
                 val key = featureClip?.ratingKey
                 val wasResumed = (featureClip?.startMs ?: 0L) > 0L
-                if (active != null && key != null && !settings.compat && settings.compatMode == "auto" && key !in settings.compatTitles) {
-                    store.learnCompat(key)
+                if (active != null && key != null && settings.compatMode != "off" && key !in settings.convertTitles) {
+                    // Première étape : mode compatible, seulement s'il peut aider (son DTS / TrueHD, ou image 4K). Sinon, ou s'il a déjà été tenté :
+                    // conversion complète par le serveur, mémorisée pour ce film.
+                    val infoText = featureClip.info.lowercase()
+                    val compatCanHelp = listOf("dca", "dts", "truehd").any { it in infoText } ||
+                        featureClip.fileResolution.lowercase() in setOf("4k", "2160")
+                    val compatFirst = settings.player != PlayerKind.MPV && !settings.compat && settings.compatMode == "auto" &&
+                        key !in settings.compatTitles && compatCanHelp
+                    if (compatFirst) store.learnCompat(key) else store.setConvert(key, true)
                     settings = store.settings()
                     val next = settings.copy(trailerCount = 0)
                     Thread {
@@ -1218,6 +1303,10 @@ private fun bitrateFor(height: Int?): Int? = when (height) {
     else -> null
 }
 
+/** Fin de la pause des prerolls (ms) ; tant que l'heure est antérieure, le bonus du serveur n'est pas demandé. */
+@Volatile
+private var prerollPauseUntilMs: Long = 0L
+
 private fun buildQueue(
     client: PlexClient,
     server: ServerEndpoint,
@@ -1233,7 +1322,7 @@ private fun buildQueue(
     // Bonus du serveur (« lire la piste 1 avant le film ») : demandé comme le client officiel, avec 0 bande-annonce
     // de cinéma ; le serveur choisit seul (au hasard ou à la suite). Pas de bonus quand on reprend un film en cours.
     val resuming = resume && feature.viewOffset > 0L
-    val asked = if (feature.type == "movie" && bonus && !resuming) {
+    val asked = if (feature.type == "movie" && bonus && !resuming && System.currentTimeMillis() >= prerollPauseUntilMs) {
         runCatching {
             client.cinemaQueue(server, feature.ratingKey, 0)
         }.getOrDefault(emptyList())
@@ -1290,10 +1379,18 @@ private fun buildQueue(
             (chosenAudioCodec ?: audio).orEmpty().lowercase().let {
                 it in setOf("dca", "dts", "dtshd", "dts-hd", "truehd")
             }
-        val delivery = if (heavyAudio) Delivery.TRANSCODE else choice.delivery
+        // Conversion complète demandée (case « Forcer la conversion » ou repli automatique) : image H.264 et son AAC par le serveur.
+        val boxWhy = if (featureItem && numeric) boxReason(settings, picked) else null
+        val userForced = featureItem && numeric && feature.ratingKey in settings.convertTitles
+        val forced = userForced || boxWhy != null
+        // « Box Player sur TV FullHD » : toute conversion complète sort en 1080p maximum, avec le débit du 1080p.
+        val boxCap = settings.boxFullHd && forced && featureItem
+        val delivery = if (heavyAudio || forced) Delivery.TRANSCODE else choice.delivery
         val videoCopy = video.isNullOrBlank() || DeviceCodecs.decodes(video)
         val directPlay = delivery == Delivery.DIRECT && numeric && !downscale
         val exo = settings.player != PlayerKind.MPV
+        // Un seul identifiant de session pour la conversion et les rapports de lecture de ce film.
+        val sessionId = java.util.UUID.randomUUID().toString()
         val url = when {
             !numeric -> {
                 if (part.isNullOrBlank() || !(part.startsWith("/library/") || part.startsWith("http"))) {
@@ -1308,17 +1405,19 @@ private fun buildQueue(
                 meta.ratingKey,
                 server.accessToken,
                 clientId,
+                session = sessionId,
                 audioStreamId = audioId,
                 subtitleStreamId = chosenSub?.id?.toIntOrNull() ?: 0,
                 mediaIndex = meta.Media.indexOf(picked).let { if (it < 0) 0 else it },
-                videoResolution = if (downscale) target.toString() else null,
-                maxVideoBitrate = if (downscale) bitrateFor(target) else null,
-                videoCodec = if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
-                audioCodec = if (exo && !directPlay) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
-                // Seul le son est converti : l'image est copiée telle quelle quand la TV sait la décoder.
-                directStream = !downscale && videoCopy,
-                hevcOutput = hevcOut,
-                maxAudioChannels = if (exo) 6 else null,
+                videoResolution = if (downscale) target.toString() else if (boxCap) "1080" else null,
+                maxVideoBitrate = if (downscale) bitrateFor(target) else if (boxCap) bitrateFor(1080) else null,
+                videoCodec = if (forced) "h264" else if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
+                audioCodec = if (forced) "aac" else if (exo && !directPlay) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
+                // Seul le son est converti : l'image est copiée telle quelle quand la TV sait la décoder (sauf conversion complète).
+                directStream = !forced && !downscale && videoCopy,
+                hevcOutput = hevcOut && !forced,
+                maxAudioChannels = if (exo || forced) 6 else null,
+                audioBoost = settings.audioBoost,
             )
         }
         // Version « français » du même flux, pour le bouton FR du lecteur (relance à la même position).
@@ -1331,14 +1430,15 @@ private fun buildQueue(
             audioStreamId = audioId,
             subtitleStreamId = subId,
             mediaIndex = meta.Media.indexOf(picked).let { if (it < 0) 0 else it },
-            videoResolution = if (downscale) target.toString() else null,
-            maxVideoBitrate = if (downscale) bitrateFor(target) else null,
-            videoCodec = if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
-            audioCodec = if (exo) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
-            directStream = !downscale && videoCopy,
+            videoResolution = if (downscale) target.toString() else if (boxCap) "1080" else null,
+            maxVideoBitrate = if (downscale) bitrateFor(target) else if (boxCap) bitrateFor(1080) else null,
+            videoCodec = if (forced) "h264" else if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
+            audioCodec = if (forced) "aac" else if (exo) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
+            directStream = !forced && !downscale && videoCopy,
             burnSubtitles = burn,
-            hevcOutput = hevcOut,
-            maxAudioChannels = if (exo) 6 else null,
+            hevcOutput = hevcOut && !forced,
+            maxAudioChannels = if (exo || forced) 6 else null,
+            audioBoost = settings.audioBoost,
         )
         // Sous-titres pour le bouton ST : la liste de Plex, avec le fichier à charger pour les sous-titres externes textuels.
         val textCodecs = setOf("srt", "ass", "ssa", "vtt", "subrip")
@@ -1401,7 +1501,7 @@ private fun buildQueue(
         } else {
             ""
         }
-        val info = listOf(if (heavyAudio) "mode compatible : son converti" else choice.reason, video, audio, picked?.videoResolution)
+        val info = listOf(if (boxWhy != null && !userForced) "conversion complète ($boxWhy : H.264 8 bits SDR 1080p)" else if (forced) "conversion complète (forcée ou repli automatique)" else if (heavyAudio) "mode compatible : son converti" else choice.reason, video, audio, picked?.videoResolution)
             .filter { !it.isNullOrBlank() }
             .joinToString(" · ")
         val externalSub = chosenSub != null && chosenSub.external && directPlay
@@ -1433,6 +1533,7 @@ private fun buildQueue(
             audioStart = audioId ?: 0,
             streamFor = if (featureItem && numeric) { a, sub -> streamFor(a, sub, sub > 0) } else null,
             diag = diagText,
+            fileLines = if (featureItem) sourceLines(settings, picked, boxWhy) else emptyList(),
             sourceAspect = if (picked != null && picked.width > 0 && picked.height > 0) picked.width.toFloat() / picked.height else 0f,
             closeOnEnd = featureItem && feature.type == "movie",
             startMs = if (resume && featureItem) {
@@ -1489,6 +1590,25 @@ private fun runOnUi(block: () -> Unit) {
 }
 
 
+/** Suite d'une série : l'épisode après le dernier de la file, puis les suivants, avec les mêmes choix audio / sous-titres. */
+private fun buildFollowOn(
+    client: PlexClient,
+    server: ServerEndpoint,
+    run: EpisodeRun,
+    settings: PlaybackSettings,
+    clientId: String,
+    remembered: SeriesChoice?,
+): List<ClipPlay> {
+    val all = client.allEpisodes(server, run.showKey)
+    val position = all.indexOfFirst { it.ratingKey == run.lastKey }
+    if (position < 0) return emptyList()
+    val next = all.drop(position + 1).firstOrNull { it.parentIndex > 0 } ?: return emptyList()
+    return buildEpisodeQueue(
+        client, server, run.showKey, next, settings, clientId,
+        picked = null, remembered = remembered, onChoice = { }, resume = false, resolutionOverride = run.resolution,
+    )
+}
+
 private data class EpisodeChoice(val resolution: String, val audio: String, val subtitleId: String)
 
 private fun episodeLabel(clip: ClipPlay, episode: Metadata): ClipPlay {
@@ -1512,9 +1632,10 @@ private fun buildEpisodeQueue(
     remembered: SeriesChoice?,
     onChoice: (SeriesChoice) -> Unit,
     resume: Boolean = false,
+    resolutionOverride: String? = null,
 ): List<ClipPlay> {
     val firstFull = client.metadata(server, first.ratingKey) ?: first
-    val resolution = picked?.resolution ?: "native"
+    val resolution = picked?.resolution ?: resolutionOverride ?: "native"
     val audioCodes = MovieFacts.audioChoicesLabeled(firstFull).map { it.first }
     val audio = picked?.audio
         ?: remembered?.audio?.takeIf { it in audioCodes }

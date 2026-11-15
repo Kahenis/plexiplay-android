@@ -71,6 +71,7 @@ import kotlinx.coroutines.withContext
 import tv.plexiplay.R
 import tv.plexiplay.data.SeriesChoice
 import tv.plexiplay.player.PlaybackSettings
+import tv.plexiplay.plex.isFrenchClip
 import tv.plexiplay.plex.PlexClient
 import tv.plexiplay.plex.model.Metadata
 import tv.plexiplay.plex.model.ServerEndpoint
@@ -88,6 +89,7 @@ fun MovieDetailScreen(
     server: ServerEndpoint,
     settings: PlaybackSettings,
     onPlay: (Metadata, String, String, String, Boolean) -> Unit,
+    onForceConvert: (String, Boolean) -> Unit = { _, _ -> },
     onTrailers: (Metadata) -> Unit,
     onClose: () -> Unit,
     notice: String = "",
@@ -378,7 +380,6 @@ fun MovieDetailScreen(
             }
         }
         val leftBar: @Composable () -> Unit = {
-
             if (movie.viewOffset >= 30_000L) {
                 Action("Reprendre à ${resumeLabel(movie.viewOffset)}", playFocus, primary = true) {
                     onPlay(movie, resolution, audio, subtitles, true)
@@ -387,8 +388,8 @@ fun MovieDetailScreen(
             } else {
                 Action("Lecture", playFocus, primary = true) { onPlay(movie, resolution, audio, subtitles, false) }
             }
-            if (movie.type != "episode") Action("Bandes-annonces") { onTrailers(movie) }
-            Action(if (watched) "Marqué comme lu" else "Marquer comme lu") {
+            if (movie.type != "episode") Action("🎬 Trailer") { onTrailers(movie) }
+            Action(if (watched) "Marqué lu" else "Marquer lu") {
                 val next = !watched
                 watched = next
                 Thread {
@@ -402,6 +403,10 @@ fun MovieDetailScreen(
             }
         }
         val rightBar: @Composable () -> Unit = {
+            run {
+                val forced = movie.ratingKey in settings.convertTitles
+                Cycle("Conv. forcée", if (forced) "Oui" else "Non") { onForceConvert(movie.ratingKey, !forced) }
+            }
             Cycle("Résolution", resolutionChoices.firstOrNull { it.first == resolution }?.second ?: "Native") {
                 menu = if (menu == "resolution") null else "resolution"
             }
@@ -485,7 +490,10 @@ fun MovieDetailScreen(
 
 internal fun backgroundClip(extras: List<Metadata>): Metadata? {
     val promo = extras.filter { it.extraType == 11 || it.extraType == 10 }
-    if (promo.isNotEmpty()) return promo.minByOrNull { if (it.duration > 0) it.duration else Long.MAX_VALUE }
+    if (promo.isNotEmpty()) {
+        val pool = promo.filter { it.isFrenchClip() }.ifEmpty { promo }
+        return pool.minByOrNull { if (it.duration > 0) it.duration else Long.MAX_VALUE }
+    }
     return extras.firstOrNull { it.extraType == 1 || it.type.equals("trailer", true) }
 }
 
