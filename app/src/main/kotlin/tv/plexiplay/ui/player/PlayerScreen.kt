@@ -265,7 +265,7 @@ fun PlayerScreen(
         }.orEmpty()
         val headers = buildMap {
             if (token.isNotBlank()) put("X-Plex-Token", java.net.URLDecoder.decode(token, Charsets.UTF_8.name()))
-            put("X-Plex-Product", "Plexiplay")
+            put("X-Plex-Product", tv.plexiplay.plex.PlexHeaders.PRODUCT)
             put("X-Plex-Platform", "Android")
         }
         ExoPlayer.Builder(context, renderers)

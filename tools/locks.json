@@ -1,13 +1,13 @@
 {
   "locked": [],
   "hashes": {
-    "auth": "1a0be16a656e63adbdab67a26da653c73c90f76edf34bad51ee15ec0281b7464",
+    "auth": "5844bf8c4f8ae6e8e086fb975979849837b3e489c9acf115a517be8805440cbb",
     "library": "4a0d5ebb4601525f50cb7044bc6423acdd45ccc2b6ca0729c181e0b7931362fb",
     "preroll": "6cb61edf02111a5d26f38a77cda0045218620b9baec2e1deee4e1d1679aaee35",
-    "player": "748e5ab38cc550ace6932d6f839645552023b0edb27bb3523c4a237ae6ced7e8",
+    "player": "6942b43a9996ed4be7591c40cf31dcd834b63a34412799dcfdac6598e21cf344",
     "settings": "fcd4e0f078a48c3dd114522c963861315058338ff30f02d090c4c002bc9291ab",
     "shell": "61725a93fc0bc6dcfa0ec2cbbf62418fc3e316fc38bc504375a3d469504d9993",
     "playback": "9086276d9e48ab2f29aa5ea054363d648c3fcb33b5d70f54c085befa5f1fc0fb",
-    "players": "1f44c1f9144ae80c95ae08a32706cc8b9f69546e3e17f4a874fad18ec9c38c4d"
+    "players": "6b1bc1771fc8588914ecc636cec70b7b6f3db3516d9eb9ae8fb7131fe7054f13"
   }
 }

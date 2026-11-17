@@ -3,8 +3,10 @@ package tv.plexiplay.plex
 import okhttp3.Request
 
 object PlexHeaders {
-    const val PRODUCT = "Plexiplay"
-    const val VERSION = "1.6.6"
+    const val VERSION = "1.6.6.1"
+
+    // Plex n'affiche que X-Plex-Product dans « Lecture en cours » (pas X-Plex-Version) : la version y est donc ajoutée.
+    const val PRODUCT = "Plexiplay " + VERSION
 
     fun apply(
         builder: Request.Builder,

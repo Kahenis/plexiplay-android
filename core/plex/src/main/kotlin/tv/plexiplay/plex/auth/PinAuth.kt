@@ -56,7 +56,7 @@ class PinAuthClient(
     fun webAuthUrl(code: String): String =
         "https://app.plex.tv/auth#?clientID=" + java.net.URLEncoder.encode(clientId, "UTF-8") +
             "&code=" + java.net.URLEncoder.encode(code, "UTF-8") +
-            "&context%5Bdevice%5D%5Bproduct%5D=" + PlexHeaders.PRODUCT
+            "&context%5Bdevice%5D%5Bproduct%5D=" + java.net.URLEncoder.encode(PlexHeaders.PRODUCT, "UTF-8").replace("+", "%20")
 
     fun signIn(login: String, password: String, verificationCode: String = ""): String {
         val body = FormBody.Builder()

@@ -4,6 +4,10 @@ import java.net.URLEncoder
 import java.util.UUID
 
 object StreamUrlFactory {
+    /** Nom du produit envoyé au serveur (« Plexiplay 1.6.6.1 »), fixé au démarrage de l'activité : ce module ne dépend pas de core/plex. */
+    @Volatile
+    var product: String = "Plexiplay"
+
     fun direct(serverUri: String, partKey: String, token: String): String {
         val path = if (partKey.startsWith("http")) partKey else serverUri.trimEnd('/') + partKey
         val join = if (path.contains("?")) "&" else "?"
@@ -45,7 +49,7 @@ object StreamUrlFactory {
             // Même identifiant que les rapports de lecture (/:/timeline) : le serveur relie ainsi la conversion à la session « Lecture en cours ».
             "X-Plex-Session-Identifier=" + enc(session),
             "X-Plex-Platform=Android",
-            "X-Plex-Product=Plexiplay",
+            "X-Plex-Product=" + enc(product),
             "X-Plex-Client-Identifier=" + enc(clientId),
             "X-Plex-Token=" + enc(token),
         )

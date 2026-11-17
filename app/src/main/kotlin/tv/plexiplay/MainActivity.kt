@@ -95,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         // Téléphone classique : paysage forcé ; pliant et tablette : rotation libre.
         requestedOrientation = appOrientation(this)
+        // Nom du produit avec la version, pour l'adresse du flux converti (core/player ne dépend pas de core/plex).
+        tv.plexiplay.player.StreamUrlFactory.product = tv.plexiplay.plex.PlexHeaders.PRODUCT
         val store = SessionStore(this)
         applyLanguage(store.settings().uiLanguage)
         val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()

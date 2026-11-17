@@ -123,6 +123,13 @@
 
 - `VotesClient.maskedName` : 3 premières lettres de chaque mot (prénom, nom) suivies de toujours 3 points « • » (`HIDDEN_DOTS`), au lieu d'un point par lettre cachée qui laissait deviner la longueur (choix de Jeff). « Jeff Guilard » → « JEF••• GUI••• ». Masquage fait à l'affichage : pas de changement serveur, les avis existants suivent. La TV (1.9.2.9) garde l'ancien format tant qu'elle n'est pas modifiée.
 
+## 1.6.6.1 : version visible dans « Lecture en cours » (comme la TV 1.9.4)
+
+- Plex n'affiche que X-Plex-Product (pas X-Plex-Version) : `PlexHeaders.PRODUCT = "Plexiplay " + VERSION` (VERSION déclaré avant). Tous les appels via `PlexHeaders.apply` envoient « Plexiplay 1.6.6.1 ».
+- « Plexiplay » écrit en dur remplacé : en-têtes du lecteur ExoPlayer (`PlayerScreen`, `PlexHeaders.PRODUCT`) ; adresse du flux converti (`StreamUrlFactory`, URL-encodé) via le champ `StreamUrlFactory.product`, fixé dans `MainActivity.onCreate` (core/player ne dépend pas de core/plex). mpv n'envoie pas de X-Plex-Product.
+- Connexion web app.plex.tv (`PinAuth.webAuthUrl`) : `context[device][product]` encodé (`URLEncoder.encode(PRODUCT, "UTF-8").replace("+", "%20")`).
+- Inchangés (pas des X-Plex-Product) : `X-Plex-Model` et le User-Agent de la mise à jour.
+
 ---
 
 # Notes de développement (Plexiplay clone)
