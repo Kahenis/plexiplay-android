@@ -42,7 +42,13 @@ import tv.plexiplay.ui.theme.themedButton
 
 /** Écran affiché quand l'accueil n'a pas pu être chargé : explication simple, « Réessayer » ou « Se reconnecter ». */
 @Composable
-fun RetryScreen(message: String, onRetry: () -> Unit, onSignIn: () -> Unit) {
+fun RetryScreen(message: String, onRetry: () -> Unit, onSignIn: () -> Unit, onSettings: (() -> Unit)? = null) {
+    // Boutons, de gauche à droite : Réessayer, Paramètres (s'il y a des serveurs connus), Se reconnecter.
+    val actions = listOfNotNull<Pair<String, () -> Unit>>(
+        "Réessayer" to onRetry,
+        onSettings?.let { "Paramètres" to it },
+        "Se reconnecter" to onSignIn,
+    )
     var choice by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -54,12 +60,12 @@ fun RetryScreen(message: String, onRetry: () -> Unit, onSignIn: () -> Unit) {
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
-                        Key.DirectionLeft -> choice = 0
-                        Key.DirectionRight -> choice = 1
+                        Key.DirectionLeft -> choice = (choice - 1).coerceAtLeast(0)
+                        Key.DirectionRight -> choice = (choice + 1).coerceAtMost(actions.size - 1)
                         else -> Unit
                     }
                 } else if (event.type == KeyEventType.KeyUp && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
-                    if (choice == 0) onRetry() else onSignIn()
+                    actions.getOrNull(choice)?.second?.invoke()
                 }
                 event.key != Key.Back && event.key != Key.Escape
             }
@@ -86,8 +92,7 @@ fun RetryScreen(message: String, onRetry: () -> Unit, onSignIn: () -> Unit) {
                 modifier = Modifier.padding(top = 12.dp, bottom = 22.dp),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                RetryButton("Réessayer", choice == 0) { onRetry() }
-                RetryButton("Se reconnecter", choice == 1) { onSignIn() }
+                actions.forEachIndexed { index, action -> RetryButton(action.first, choice == index) { action.second() } }
             }
         }
     }

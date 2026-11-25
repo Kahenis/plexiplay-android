@@ -27,6 +27,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.os.LocaleListCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import tv.plexiplay.data.SeriesChoice
 import tv.plexiplay.data.SessionStore
@@ -234,6 +238,8 @@ private fun App(
     var ready by remember { mutableStateOf(token.isNullOrBlank()) }
     var progress by remember { mutableFloatStateOf(if (token.isNullOrBlank()) 1f else 0.04f) }
     var loadedUri by remember { mutableStateOf<String?>(null) }
+    // Heure (horloge système) du dernier chargement complet de l'accueil : évite de le recharger aussitôt après le démarrage.
+    var homeLoadedAt by remember { mutableStateOf(0L) }
     val server = servers.getOrNull(serverIndex)
     // Bibliothèques de vidéos personnelles : ni résumé ni description, on lance la lecture sans passer par la fiche.
     fun openMovie(item: Metadata) {
@@ -348,7 +354,27 @@ private fun App(
             if (Looper.myLooper() == Looper.getMainLooper()) apply() else main.post(apply)
         }
         try {
-            val found = stage(client, 0.04f, 0.28f, ::push) {
+            // Démarrage rapide : le serveur utilisé la dernière fois est essayé directement (une seule adresse, 3 s au plus).
+            // S'il répond et a des bibliothèques, l'accueil se charge sans passer par plex.tv ; la liste des serveurs
+            // est rafraîchie ensuite en arrière-plan. Sinon, procédure complète ci-dessous.
+            val saved = store.servers()
+            val lastUsed = saved.getOrNull(store.activeServerIndex()) ?: saved.firstOrNull()
+            val quick = lastUsed?.let { last ->
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val reached = client.reach(last.copy(alternates = emptyList()))
+                        val libraries = reached?.let { client.sections(it) }.orEmpty()
+                        if (reached != null && libraries.isNotEmpty()) reached.copy(alternates = last.alternates) to libraries else null
+                    }.getOrNull()
+                }
+            }
+            push(0.28f)
+            // Bibliothèques déjà lues pendant le choix du serveur (évite de les redemander).
+            val probed = java.util.concurrent.ConcurrentHashMap<String, List<LibrarySection>>()
+            quick?.let { probed[it.first.uri] = it.second }
+            val found = if (quick != null) {
+                listOf(quick.first) + saved.filter { it.clientIdentifier != quick.first.clientIdentifier }
+            } else stage(client, 0.04f, 0.28f, ::push) {
                 val listed = client.chooseServers(client.resources(current))
                 // Chaque serveur est joint sur la première de ses adresses qui répond.
                 val pool = java.util.concurrent.Executors.newFixedThreadPool(listed.size.coerceIn(1, 6))
@@ -363,7 +389,7 @@ private fun App(
                 // (le sien, par exemple) ne doit pas masquer celui d'un ami.
                 val live = reached.filterNotNull()
                 val first = live.firstOrNull { candidate ->
-                    runCatching { client.sections(candidate).isNotEmpty() }.getOrDefault(false)
+                    runCatching { client.sections(candidate).also { probed[candidate.uri] = it }.isNotEmpty() }.getOrDefault(false)
                 }
                 if (first != null) listOf(first) + all.filter { it.clientIdentifier != first.clientIdentifier } else all
             }
@@ -376,12 +402,34 @@ private fun App(
                 loadFailure = "Aucun serveur Plex n'a été trouvé sur votre compte. Vérifiez qu'il est allumé et connecté à Internet, puis réessayez."
                 return@LaunchedEffect
             }
-            val loaded = stage(client, 0.28f, 0.42f, ::push) { client.sections(active) }
+            val loaded = probed[active.uri] ?: stage(client, 0.28f, 0.42f, ::push) { client.sections(active) }
             val shown = visibleSections(store, active, loaded)
             sections = shown
             entries = railEntries(shown)
             loadedUri = active.uri
             shelves = loadHome(client, active, shown, 0.42f, 0.98f, ::push)
+            homeLoadedAt = android.os.SystemClock.elapsedRealtime()
+            if (quick != null) {
+                // Liste des serveurs rafraîchie en arrière-plan ; le serveur affiché reste le même (pas de rechargement).
+                val keep = active
+                val before = saved
+                launch(Dispatchers.IO) {
+                    val fresh = runCatching { client.chooseServers(client.resources(current)) }.getOrNull() ?: return@launch
+                    if (fresh.isEmpty()) return@launch
+                    // Comme au démarrage complet : chaque autre serveur est joint sur la première adresse qui répond,
+                    // sinon on garde l'adresse qui marchait la dernière fois.
+                    val others = fresh.filter { it.clientIdentifier != keep.clientIdentifier }
+                        .map { entry -> async { runCatching { client.reach(entry) }.getOrNull() ?: before.firstOrNull { it.clientIdentifier == entry.clientIdentifier } ?: entry } }
+                        .awaitAll()
+                    val merged = listOf(keep) + others
+                    runOnUi {
+                        if (servers.firstOrNull()?.uri == keep.uri) {
+                            store.saveServers(merged, 0)
+                            servers = merged
+                        }
+                    }
+                }
+            }
             items = emptyList()
             selected = "home"
             pane = LibraryPane.NEWS
@@ -430,6 +478,13 @@ private fun App(
                 ready = false
                 reloadTick += 1
             },
+            // Accès aux Paramètres malgré l'échec (choisir un autre serveur, etc.), si des serveurs sont connus.
+            onSettings = if (servers.isNotEmpty()) {
+                {
+                    loadFailure = null
+                    selected = "settings"
+                }
+            } else null,
             onSignIn = {
                 loadFailure = null
                 store.clearSession()
@@ -455,22 +510,36 @@ private fun App(
     LaunchedEffect(server?.uri) {
         val active = server ?: return@LaunchedEffect
         if (loadedUri == active.uri && sections.isNotEmpty()) return@LaunchedEffect
+        // Changement de serveur : il est d'abord joint sur la première de ses adresses qui répond (locale, distante, relais).
+        val reached = withContext(Dispatchers.IO) { runCatching { client.reach(active) }.getOrNull() }
+        if (reached != null && reached.uri != active.uri) {
+            val updated = servers.map { if (it.clientIdentifier == active.clientIdentifier) reached else it }
+            store.saveServers(updated, serverIndex)
+            servers = updated // relance cet effet avec la bonne adresse
+            return@LaunchedEffect
+        }
         runCatching {
+            if (reached == null) throw java.io.IOException("injoignable")
             withContext(Dispatchers.IO) { client.sections(active) }
         }.onSuccess { loaded ->
             val shown = visibleSections(store, active, loaded)
             sections = shown
             entries = railEntries(shown)
-            selected = "home"
-            pane = LibraryPane.NEWS
+            if (selected != "settings") {
+                selected = "home"
+                pane = LibraryPane.NEWS
+            }
             loadedUri = active.uri
         }.onFailure {
             sections = emptyList()
             entries = railEntries(emptyList())
             shelves = emptyList()
             items = emptyList()
-            selected = "home"
-            pane = LibraryPane.NEWS
+            // Depuis les Paramètres, on y reste : on peut choisir aussitôt un autre serveur.
+            if (selected != "settings") {
+                selected = "home"
+                pane = LibraryPane.NEWS
+            }
             loadedUri = active.uri
             status = "${active.name} : serveur injoignable"
         }
@@ -478,11 +547,17 @@ private fun App(
 
     // Catalogue de recherche : titres des bibliothèques affichées du serveur actif, chargés une fois.
     LaunchedEffect(server?.uri, sections) { catalog = null }
-    LaunchedEffect(selected, server?.uri, sections, catalog == null) {
+    // Préparé en arrière-plan quelques secondes après l'arrivée sur un écran (recherche instantanée), ou tout de suite
+    // à l'ouverture de Recherche ; les bibliothèques sont lues en même temps.
+    LaunchedEffect(selected == "search", server?.uri, sections, catalog == null) {
         val active = server ?: return@LaunchedEffect
-        if (selected != "search" || catalog != null) return@LaunchedEffect
+        if (catalog != null || sections.isEmpty()) return@LaunchedEffect
+        if (selected != "search") kotlinx.coroutines.delay(6000)
+        val wanted = sections
         catalog = withContext(Dispatchers.IO) {
-            sections.flatMap { section -> runCatching { client.items(active, section.key) }.getOrDefault(emptyList()) }
+            wanted.map { section -> async { runCatching { client.items(active, section.key) }.getOrDefault(emptyList()) } }
+                .awaitAll()
+                .flatten()
                 .filter { it.type == "movie" || it.type == "show" }
         }
     }
@@ -524,6 +599,10 @@ private fun App(
     LaunchedEffect(selected, pane, stack, collection?.ratingKey, server?.uri, sections, style, sagas) {
         val active = server ?: return@LaunchedEffect
         if (selected == "settings" || selected == "search") return@LaunchedEffect
+        // L'accueil vient d'être chargé (démarrage) : inutile de tout redemander tout de suite.
+        if (selected == "home" && stack.isEmpty() && collection == null && shelves.isNotEmpty() &&
+            android.os.SystemClock.elapsedRealtime() - homeLoadedAt < 15_000
+        ) return@LaunchedEffect
         if (shelves.isEmpty() && items.isEmpty()) status = "Chargement…"
         val parent = stack.lastOrNull()
         val currentCollection = collection
@@ -1448,14 +1527,32 @@ private suspend fun loadHome(
         return emptyList()
     }
     val slice = (end - start) / sections.size
-    val homes = sections.mapIndexed { index, section ->
-        stage(client, start + index * slice, start + (index + 1) * slice, publish) { homeOf(client, server, section) }
-    }
+    val homes = homesInParallel(client, server, sections) { done -> publish(start + done * slice) }
+    publish(end)
     return finishHome(homes)
 }
 
-private fun homeRows(client: PlexClient, server: ServerEndpoint, sections: List<LibrarySection>): List<Shelf> =
-    finishHome(sections.filter { !it.personal }.map { homeOf(client, server, it) })
+private suspend fun homeRows(client: PlexClient, server: ServerEndpoint, sections: List<LibrarySection>): List<Shelf> =
+    finishHome(homesInParallel(client, server, sections.filter { !it.personal }))
+
+/**
+ * Rayons de toutes les bibliothèques chargés en même temps (4 bibliothèques à la fois au plus) au lieu de l'une après
+ * l'autre ; l'ordre des bibliothèques est conservé. [onDone] reçoit le nombre de bibliothèques terminées (barre de chargement).
+ */
+private suspend fun homesInParallel(
+    client: PlexClient,
+    server: ServerEndpoint,
+    sections: List<LibrarySection>,
+    onDone: (Int) -> Unit = {},
+): List<HomeOf> = kotlinx.coroutines.coroutineScope {
+    val limit = kotlinx.coroutines.sync.Semaphore(4)
+    val done = java.util.concurrent.atomic.AtomicInteger(0)
+    sections.map { section ->
+        async(Dispatchers.IO) {
+            limit.withPermit { homeOf(client, server, section) }.also { onDone(done.incrementAndGet()) }
+        }
+    }.awaitAll()
+}
 
 /** Une bibliothèque sur l'accueil : ses deux rayons, dans l'ordre du serveur. */
 private class HomeOf(val section: LibrarySection, val allowed: Boolean, val note: String, val shelves: List<Shelf>)
@@ -1472,7 +1569,9 @@ private fun finishHome(homes: List<HomeOf>): List<Shelf> {
     }
 }
 
-private fun homeOf(client: PlexClient, server: ServerEndpoint, section: LibrarySection): HomeOf {
+private suspend fun homeOf(client: PlexClient, server: ServerEndpoint, section: LibrarySection): HomeOf = kotlinx.coroutines.coroutineScope {
+    // Les rayons de la bibliothèque sont demandés en même temps que le réglage d'accueil du serveur.
+    val hubsAsync = async(Dispatchers.IO) { runCatching { client.sectionHubs(server, section.key) }.getOrNull().orEmpty() }
     val manage = runCatching { client.homeHubs(server, section.key) }.getOrNull()
     // Réglage du serveur illisible ou vide : on ne filtre pas, seule la liste de gauche compte.
     val allowed = manage.isNullOrEmpty() || manage.any { it.onHome }
@@ -1482,9 +1581,12 @@ private fun homeOf(client: PlexClient, server: ServerEndpoint, section: LibraryS
         allowed -> "autorisée (${manage.count { it.onHome }}/${manage.size} rayons)"
         else -> "non autorisée sur l'accueil"
     }
-    if (!allowed) return HomeOf(section, false, status, emptyList())
+    if (!allowed) {
+        hubsAsync.cancel()
+        return@coroutineScope HomeOf(section, false, status, emptyList())
+    }
     val isShow = section.type == "show"
-    val hubs = runCatching { client.sectionHubs(server, section.key) }.getOrNull().orEmpty()
+    val hubs = hubsAsync.await()
     fun hub(vararg words: String): HubEntry? =
         words.firstNotNullOfOrNull { word -> hubs.firstOrNull { it.hubIdentifier.contains(word, ignoreCase = true) } }
     val continueHub = hub("continue", "ondeck", "inprogress")
@@ -1495,7 +1597,7 @@ private fun homeOf(client: PlexClient, server: ServerEndpoint, section: LibraryS
         ?: runCatching { client.recentlyAdded(server, section.key, 80) }.getOrDefault(emptyList())
     val shaped = { list: List<Metadata> -> if (isShow) list.map { seriesPoster(it) } else list }
     val note = "$status · suite : ${continueHub?.hubIdentifier ?: "standard"} · ajouts : ${addedHub?.hubIdentifier ?: "standard"}"
-    return HomeOf(
+    HomeOf(
         section, true, note,
         listOf(
             Shelf("${section.title} - Continuer à voir", shaped(keep)),

@@ -67,6 +67,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -220,10 +221,18 @@ fun MovieDetailScreen(
     }
 
     LaunchedEffect(seed.ratingKey) {
+        // Requêtes indépendantes lancées en même temps : fiche complète, série (épisode), bandes-annonces du fond animé.
+        val extrasAsync = async(Dispatchers.IO) {
+            runCatching { client.extras(server, promoKey?.takeIf { it.isNotBlank() } ?: seed.ratingKey) }.getOrDefault(emptyList())
+        }
+        val seedShow = seed.grandparentRatingKey.takeIf { it.isNotBlank() }
+        val showAsync = seedShow?.let { key -> async(Dispatchers.IO) { runCatching { client.metadata(server, key) }.getOrNull() } }
         val full = withContext(Dispatchers.IO) { runCatching { client.metadata(server, seed.ratingKey) }.getOrNull() } ?: seed
         movie = full
         if (full.type == "episode") {
-            val show = full.grandparentRatingKey.takeIf { it.isNotBlank() }?.let { key ->
+            val showKey = full.grandparentRatingKey.takeIf { it.isNotBlank() }
+            val show = if (showAsync != null && showKey == seedShow) showAsync.await() else showKey?.let { key ->
+                showAsync?.cancel()
                 withContext(Dispatchers.IO) { runCatching { client.metadata(server, key) }.getOrNull() }
             }
             val main = show?.Role.orEmpty().take(15)
@@ -235,10 +244,8 @@ fun MovieDetailScreen(
         }
         watched = full.viewCount > 0
         themeUrl = client.fileUrl(server, themePath?.takeIf { it.isNotBlank() } ?: full.theme)
-        val extra = withContext(Dispatchers.IO) {
-            runCatching { client.extras(server, promoKey?.takeIf { it.isNotBlank() } ?: full.ratingKey) }.getOrDefault(emptyList())
-                .let { backgroundClip(it) }
-        }
+        showAsync?.takeIf { full.type != "episode" }?.cancel()
+        val extra = backgroundClip(extrasAsync.await())
         val part = extra?.let { item ->
             val detailed = withContext(Dispatchers.IO) { runCatching { client.metadata(server, item.ratingKey) }.getOrNull() } ?: item
             detailed.Media.firstOrNull()?.Part?.firstOrNull()?.key

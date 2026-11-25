@@ -130,6 +130,13 @@
 - Connexion web app.plex.tv (`PinAuth.webAuthUrl`) : `context[device][product]` encodé (`URLEncoder.encode(PRODUCT, "UTF-8").replace("+", "%20")`).
 - Inchangés (pas des X-Plex-Product) : `X-Plex-Model` et le User-Agent de la mise à jour.
 
+## 1.6.7 : chargements plus rapides (repris de la TV 1.9.5.2 et 1.9.5.3)
+
+- Fusion à trois voies `17219fe~1` → `676245d` (Plexiplay-backup) dans `MainActivity`, `RetryScreen`, `MovieDetailScreen`, `SeriesScreen`, `ShellScreen` ; deux conflits résolus à la main.
+- Repris : rayons de l'accueil chargés en parallèle (`homesInParallel`, 4 bibliothèques à la fois, ordre conservé ; `homeOf` en `suspend`, `sectionHubs` en même temps que `homeHubs`) ; démarrage direct sur le dernier serveur (`reach` sur l'adresse enregistrée, 3 s), liste des serveurs rafraîchie en arrière-plan (autres serveurs joints en parallèle, adresse enregistrée gardée à défaut) ; bibliothèques demandées une seule fois (`probed`) ; pas de rechargement de l'accueil juste après le démarrage (`homeLoadedAt`, 15 s) ; catalogue de recherche préparé en arrière-plan en parallèle ; fiches film et série : chargements lancés en même temps ; changement de serveur : `reach` sur toutes ses adresses avant de recharger ; échec depuis les Paramètres : on reste dans les Paramètres ; écran « Réessayer » : bouton « Paramètres » quand des serveurs sont connus ; repli du focus vers le menu après 1,5 s seulement (1.9.5.3, sans effet au doigt).
+- Adaptations mobile : bibliothèques de vidéos personnelles toujours exclues de l'accueil (`homeRows`, `loadHome`) ; boutons de l'écran « Réessayer » touchables (chaque action passée à `RetryButton`).
+- Non fait (choix à confirmer par Jeff) : R8 (désactivé sur mobile, dépôt public) ; profil de démarrage (`baseline.prof`, absent sur mobile).
+
 ---
 
 # Notes de développement (Plexiplay clone)

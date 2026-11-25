@@ -13,8 +13,8 @@ android {
         applicationId = "tv.plexiplay.mobile"
         minSdk = 23
         targetSdk = 35
-        versionCode = 167
-        versionName = "1.6.6.1"
+        versionCode = 168
+        versionName = "1.6.7"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }

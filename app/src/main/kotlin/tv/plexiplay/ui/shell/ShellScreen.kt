@@ -181,6 +181,8 @@ fun ShellScreen(
     // Au retour dans le menu de gauche, le focus revient sur la ligne de la bibliothèque ouverte.
     val focusIndex = entries.indexOfFirst { it.id == selectedId }.takeIf { it >= 0 } ?: 0
     val contentFocus = remember { FocusRequester() }
+    // Vrai quand la sélection est quelque part dans la partie droite (onglets, affiches, paramètres…).
+    var contentHasFocus by remember { mutableStateOf(false) }
     val restoreFocus = remember { FocusRequester() }
     var menu by remember { mutableStateOf<ForgetMenu?>(null) }
     var menuChoice by remember { mutableStateOf(1) }
@@ -340,7 +342,7 @@ fun ShellScreen(
                     }
                 }
             }
-            items(entries.size) { index ->
+            items(entries.size, key = { index -> entries[index].id }) { index ->
                 val entry = entries[index]
                 RailRow(
                     entry = entry,
@@ -366,6 +368,7 @@ fun ShellScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .onFocusChanged { contentHasFocus = it.hasFocus }
                 .graphicsLayer {
                     if (ThemeMode.future) {
                         val e = enter.value
@@ -574,8 +577,20 @@ fun ShellScreen(
     }
     LaunchedEffect(zone, selectedId, pane, useShelves, pageKey, covered) {
         if (covered || target != null) return@LaunchedEffect
-        runCatching {
-            if (zone == Zone.Rail) railFocus.requestFocus() else contentFocus.requestFocus()
+        if (zone == Zone.Rail) {
+            runCatching { railFocus.requestFocus() }
+        } else {
+            fun tryContent() = runCatching { contentFocus.requestFocus() }.let { it.isSuccess && (it.getOrNull() as Any?) != false }
+            if (!tryContent()) {
+                // Page encore en chargement : la sélection reste où elle est (un onglet, par exemple). Si, après le
+                // chargement, rien n'est sélectionnable à droite et que la sélection n'y est pas (serveur injoignable,
+                // page vide), le menu de gauche reprend la main pour pouvoir aller dans les Paramètres.
+                delay(1500)
+                if (!contentHasFocus && !tryContent()) {
+                    zone = Zone.Rail
+                    runCatching { railFocus.requestFocus() }
+                }
+            }
         }
     }
     LaunchedEffect(target, items, shelves, covered, pageKey, useShelves) {

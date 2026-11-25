@@ -68,6 +68,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import tv.plexiplay.R
@@ -165,26 +166,26 @@ fun SeriesScreen(
     }
 
     LaunchedEffect(seed.ratingKey) {
+        // Requêtes indépendantes lancées en même temps : fiche, saisons, prochain épisode, bandes-annonces du fond animé.
+        val key = seed.ratingKey
+        val seasonsAsync = async(Dispatchers.IO) { runCatching { client.children(server, key) }.getOrDefault(emptyList()) }
+        val nextAsync = async(Dispatchers.IO) {
+            runCatching { client.showOnDeck(server, key) }.getOrNull()
+                ?: runCatching {
+                    val all = client.allEpisodes(server, key)
+                    all.firstOrNull { it.viewCount == 0 && it.parentIndex > 0 } ?: all.firstOrNull()
+                }.getOrNull()
+        }
+        val extrasAsync = async(Dispatchers.IO) { runCatching { client.extras(server, key) }.getOrDefault(emptyList()) }
         val full = withContext(Dispatchers.IO) {
             runCatching { client.metadata(server, seed.ratingKey) }.getOrNull()
         } ?: seed
         show = full
         watched = full.leafCount > 0 && full.viewedLeafCount >= full.leafCount
         themeUrl = client.fileUrl(server, full.theme.ifBlank { seed.theme })
-        seasons = withContext(Dispatchers.IO) {
-            runCatching { client.children(server, full.ratingKey) }.getOrDefault(emptyList())
-        }.filter { it.type == "season" }
-        next = withContext(Dispatchers.IO) {
-            client.showOnDeck(server, full.ratingKey)
-                ?: runCatching {
-                    val all = client.allEpisodes(server, full.ratingKey)
-                    all.firstOrNull { it.viewCount == 0 && it.parentIndex > 0 } ?: all.firstOrNull()
-                }.getOrNull()
-        }
-        val extra = withContext(Dispatchers.IO) {
-            runCatching { client.extras(server, full.ratingKey) }.getOrDefault(emptyList())
-                .let { backgroundClip(it) }
-        }
+        seasons = seasonsAsync.await().filter { it.type == "season" }
+        next = nextAsync.await()
+        val extra = backgroundClip(extrasAsync.await())
         val part = extra?.let { item ->
             val detailed = withContext(Dispatchers.IO) {
                 runCatching { client.metadata(server, item.ratingKey) }.getOrNull()
